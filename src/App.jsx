@@ -46,6 +46,10 @@ const TableIcon = mk(<><path d="M12 3v18" /><rect width="18" height="18" x="3" y
 const Highlighter = mk(<><path d="m9 11-6 6v3h9l3-3" /><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" /></>);
 const Shuffle = mk(<><path d="m18 14 4 4-4 4" /><path d="m18 2 4 4-4 4" /><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-7.6a4 4 0 0 1 3.3-1.7H22" /><path d="M2 6h1.972a4 4 0 0 1 3.6 2.2" /><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45" /></>);
 const SlidersHorizontal = mk(<><path d="M21 4h-7" /><path d="M10 4H3" /><path d="M21 12h-9" /><path d="M8 12H3" /><path d="M21 20h-5" /><path d="M12 20H3" /><path d="M14 2v4" /><path d="M8 10v4" /><path d="M16 18v4" /></>);
+const Mail = mk(<><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></>);
+const BookOpen = mk(<><path d="M12 7v14" /><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /></>);
+const ExternalLink = mk(<><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>);
+const Paperclip = mk(<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />);
 const ArrowRight = mk(<><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></>);
 
 // Logo : livre ouvert (même construction que le « compte en T » de Finances)
@@ -173,11 +177,11 @@ const RESSOURCES_GEA_S1 = [
   ['R1.01', 'Environnement économique', ['économie', 'economie generale']],
   ['R1.02', 'Environnement juridique', ['droit']],
   ['R1.03', 'Ressources humaines', ['grh']],
-  ['R1.04', "Management d'activités", ['management des activites', 'management']],
+  ['R1.04', "Management d'activités", ['management des activites', 'management activites', 'management']],
   ['R1.05', 'Environnement sociologique', ['sociologie']],
   ['R1.06', 'Fiscalité', []],
   ['R1.07', 'Comptabilité', ['compta']],
-  ['R1.08', 'Outils mathématiques de gestion', ['mathematiques', 'maths', 'outils statistiques', 'statistiques']],
+  ['R1.08', 'Outils mathématiques de gestion', ['mathematiques', 'maths', 'outils statistiques', 'statistiques', 'outils mathematiques']],
   ['R1.09', 'Outils numériques de gestion', ['outils informatiques', 'informatique']],
   ['R1.10', 'Finance', []],
   ['R1.11', 'Gestion de projet', []],
@@ -185,7 +189,7 @@ const RESSOURCES_GEA_S1 = [
   ['R1.13', 'Expression, communication et culture générale', ['expression communication', 'culture generale', 'expression']],
   ['R1.14', 'Anglais appliqué aux affaires', ['anglais']],
   ['R1.15', 'Projet Personnel et Professionnel', ['ppp', 'portfolio']],
-  ['R1.16_E', 'Langue vivante 2 Espagnol', ['espagnol', 'lv2']],
+  ['R1.16_E', 'Langue vivante 2 Espagnol', ['espagnol', 'lv2', 'lv2 espagnol', 'lv2 appliquee aux affaires']],
   ['R1.17', 'Contrôle de gestion', ['controle de gestion']],
   ['SAE1.01', 'Situer une organisation dans son environnement', []],
   ['SAE1.02', 'SI comptable', ['si comptable']],
@@ -220,6 +224,10 @@ const donneesInitiales = () => {
     fiches: [],
     qcms: [],
     edtImport: [],
+    edtModifs: {},
+    examensIgnores: [],
+    gea: null,
+    moodle: null,
   };
 };
 
@@ -228,7 +236,11 @@ const migrer = (d) => {
   const base = donneesInitiales();
   if (!d || typeof d !== 'object') return base;
   const out = { ...base, ...d };
-  ['ressources', 'semestres', 'evaluations', 'fiches', 'qcms', 'edtImport'].forEach(k => { if (!Array.isArray(out[k])) out[k] = base[k]; });
+  ['ressources', 'semestres', 'evaluations', 'fiches', 'qcms', 'edtImport', 'examensIgnores'].forEach(k => { if (!Array.isArray(out[k])) out[k] = base[k]; });
+  if (!out.edtModifs || typeof out.edtModifs !== 'object') out.edtModifs = {};
+  const defauts = Object.fromEntries(RESSOURCES_GEA_S1.map(([code, , alias]) => [code, alias]));
+  out.ressources = out.ressources.map(r => (defauts[r.code]
+    ? { ...r, alias: Array.from(new Set([...(Array.isArray(r.alias) ? r.alias : []), ...defauts[r.code]])) } : r));
   if (!out.semestres.length) out.semestres = base.semestres;
   if (!out.semestres.some(s => s.id === out.semestreActif)) out.semestreActif = out.semestres[out.semestres.length - 1].id;
   out.qcms = out.qcms.map(q => ({ tentatives: [], ...q, questions: (q.questions || []).map(x => ({ id: x.id || uid('q'), ...x })) }));
@@ -365,8 +377,6 @@ const lireICS = (texte) => {
   return out.map(c => ({ ...c, id: c.id || `ics_${c.debut}_${norm(c.titre).slice(0, 24)}` }));
 };
 
-const RE_EXAMEN = /\b(examens?|exam|partiels?|ds|devoir surveill\w*|contr[oô]les?|cc ?\d*|[ée]valuations?|soutenances?|rattrapages?|qcm)\b/i;
-
 const salleCourte = (s) => String(s || '').split(/\s*[,;]\s*/).map(x => {
   if (/travert/i.test(x)) return 'Amphi Travert';
   if (/charpak/i.test(x)) return 'Amphi Charpak';
@@ -380,16 +390,47 @@ const champDescription = (desc, re) => {
   return m ? m[1].trim().replace(/\.$/, '') : '';
 };
 
-// Transforme un cours brut (Unicaen ou .ics) en cours affichable
-const nettoyerCours = (c, ressources) => {
-  const titre = String(c.titre || '').trim();
-  const desc = String(c.description || '');
-  const debut = new Date(c.debut), fin = new Date(c.fin);
-  const mod = (titre + ' ' + desc).match(/\[\s*MOD\s*:\s*([^\]]+)\]/i);
-  const codeTrouve = mod ? mod[1] : ((titre.match(/\b(SAE\s?\d\.?\d{1,2}|R\s?\d\.\d{1,2}(?:_[A-Z])?)\b/i) || [])[1] || '');
-  let ressource = codeTrouve ? trouverRessource(ressources, codeTrouve) : null;
-  if (!ressource) {
-    const t = ` ${norm(titre)} `;
+// « S1-C Fiscalité » → « Fiscalité » ; « S1-SAE1.02 SI comptable » → « SAE1.02 SI comptable »
+const sansPrefixe = (t) => String(t || '').trim().replace(/^S\d+\s*-\s*(?:[A-Z]{1,6}\d?\s+)?/, '').trim();
+
+// S1-CM : cours magistral ; S1-C : groupe de TD ; S1-C2 : groupe de TP
+const typeCours = (titre, groupes) => {
+  const m = String(titre || '').trim().match(/^S\d+\s*-\s*([A-Z]{1,6})(\d?)(?=\s|$)/);
+  if (m && ['CM', 'TD', 'TP'].includes(m[1])) return m[1];
+  const g = String(groupes || '').trim();
+  if (/^TP/i.test(g)) return 'TP';
+  if (/^TD/i.test(g)) return 'TD';
+  if (m) return m[1].length <= 2 ? (m[2] ? 'TP' : 'TD') : '';
+  if (/\bCM\b/.test(titre)) return 'CM';
+  if (/\bTP\b/.test(titre)) return 'TP';
+  if (/\bTD\b/.test(titre)) return 'TD';
+  return '';
+};
+
+// Examen deviné d'après l'intitulé (le site GEA de l'IUT, lui, l'indique explicitement)
+const estExamenTitre = (t) => {
+  const brut = String(t || '').trim();
+  const n = ` ${norm(brut)} `;
+  if (/ (examens?|partiels?) /.test(n)) return true;
+  if (/^S\d+\s*-/.test(brut)) return false;
+  return /\s[—–]\s/.test(brut) || / (cc\d*|ds\d*|controle (continu|terminal)|rattrapage|soutenance|ecrit|oral) /.test(n);
+};
+
+// Ressource d'un intitulé : code [MOD:…], code dans le titre, puis nom ou alias
+const ressourceDuTitre = (titre, desc, toutes) => {
+  // « S2-… » : seulement les ressources du semestre 2 (aucune si la maquette n'en a pas)
+  const semTitre = (String(titre).trim().match(/^S(\d+)\s*-/) || [])[1];
+  const ressources = semTitre && toutes.some(r => /^(R|SAE)\d/i.test(r.code))
+    ? toutes.filter(r => new RegExp(`^(R|SAE)${semTitre}\\.`, 'i').test(r.code)) : toutes;
+  const mod = (titre + ' ' + (desc || '')).match(/\[\s*MOD\s*:\s*([^\]]+)\]/i);
+  const code = mod ? mod[1] : ((titre.match(/\b(SAE\s?\d\.?\d{1,2}|R\s?\d\.\d{1,2}(?:_[A-Z])?)\b/i) || [])[1] || '');
+  const parCode = code ? trouverRessource(ressources, code) : null;
+  if (parCode) return parCode;
+  // « CC2 coûts partiels — Contrôle de gestion » : le module est après le tiret
+  const parties = String(titre).split(/\s[—–]\s/);
+  const cibles = parties.length > 1 ? [parties[parties.length - 1], titre] : [titre];
+  for (const cible of cibles) {
+    const t = ` ${norm(sansPrefixe(cible))} `;
     let best = null, bestLen = 0;
     for (const r of ressources) {
       for (const cand of [r.nom, ...(r.alias || [])]) {
@@ -397,34 +438,138 @@ const nettoyerCours = (c, ressources) => {
         if (n.length > bestLen && t.includes(` ${n} `)) { best = r; bestLen = n.length; }
       }
     }
-    ressource = best;
+    if (best) return best;
   }
-  const typeM = titre.match(/\bS\d+\s*-\s*(CM|TD|TP|C|EX|DS)\b/i) || titre.match(/\b(CM|TD|TP)\b/);
-  let type = typeM ? typeM[1].toUpperCase() : '';
-  if (type === 'C') type = 'CM';
-  const nettoye = titre
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\bS\d+\s*-\s*[A-Z]{1,3}\b/g, ' ')
-    .replace(/\s+-\s+Salle\s*:.*$/i, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^[\s\-–:]+|[\s\-–:]+$/g, '');
-  const examen = RE_EXAMEN.test(titre) || /^(EX|DS)$/.test(type);
+  return null;
+};
+
+const cleModifTitre = (titre) => `t:${norm(titre)}`;
+
+// Transforme un cours brut (Unicaen, site GEA ou .ics) en cours affichable, modifications comprises
+const nettoyerCours = (c, ressources, modifs = {}) => {
+  const titre = String(c.titre || '').trim();
+  const desc = String(c.description || '');
+  const debut = new Date(c.debut), fin = new Date(c.fin);
+  const mRegle = modifs[cleModifTitre(titre)] || null;
+  const mCours = modifs[`id:${c.id}`] || null;
+  const m = { ...(mRegle || {}), ...(mCours || {}) };
+  let ressource = ressourceDuTitre(titre, desc, ressources);
+  if (m.code !== undefined) ressource = m.code ? ressources.find(r => r.code === m.code) || null : null;
+  const groupes = c.groupes || champDescription(desc, /Groupes? d'[ée]tudiants\s*:\s*([^\n]+)/i);
+  const nettoye = sansPrefixe(titre.replace(/\[[^\]]*\]/g, ' ').replace(/\s+-\s+Salle\s*:.*$/i, ' ').replace(/\s{2,}/g, ' '));
+  const parties = titre.split(/\s[—–]\s/);
+  const examenSource = typeof c.examen === 'boolean' ? c.examen : estExamenTitre(titre);
+  const examen = typeof m.examen === 'boolean' ? m.examen : examenSource;
   const lieu = c.lieu || champDescription(desc, /Salles?\s*:\s*([^\n]+)/i);
   return {
     id: c.id || `${c.debut}_${titre}`,
     debut, fin,
-    titre: ressource ? ressource.nom : (nettoye || titre || 'Cours'),
+    titre: m.titre || (ressource ? ressource.nom : (nettoye || titre || 'Cours')),
     titreBrut: titre,
+    libelleExamen: parties.length > 1 ? parties.slice(0, -1).join(' — ').trim() : 'Examen',
     code: ressource ? ressource.code : '',
     couleur: ressource ? ressource.couleur : '#a8a29e',
-    type: examen && /^(EX|DS)$/.test(type) ? '' : type,
-    salle: salleCourte(lieu),
-    enseignant: champDescription(desc, /Enseignants?\s*:\s*([^\n]+)/i),
-    groupes: champDescription(desc, /Groupes? d'[ée]tudiants\s*:\s*([^\n]+)/i),
+    type: m.type !== undefined ? m.type : typeCours(titre, groupes),
+    salle: m.salle !== undefined ? m.salle : salleCourte(lieu),
+    enseignant: c.enseignant || champDescription(desc, /Enseignants?\s*:\s*([^\n]+)/i),
+    groupes,
     examen,
+    masque: !!m.masque,
+    modifie: !!(mRegle || mCours),
+    regle: !!mRegle,
     minutes: Math.max(0, (fin - debut) / 60000),
   };
 };
+
+// Clé commune à un cours du webmail et au même cours vu sur le site GEA
+const minuteISO = (d) => new Date(d).toISOString().slice(0, 16);
+
+// Fusionne webmail, site GEA et .ics : le webmail prime, le site GEA apporte les examens
+// et couvre les jours absents du webmail
+const fusionnerCours = (zimbra, gea, ics) => {
+  const geaParMinute = new Map();
+  gea.forEach(c => { const k = minuteISO(c.debut); geaParMinute.set(k, [...(geaParMinute.get(k) || []), c]); });
+  const joursZimbra = new Set(zimbra.map(c => toISODate(new Date(c.debut))));
+  const out = zimbra.map(c => {
+    const memes = geaParMinute.get(minuteISO(c.debut)) || [];
+    const g = memes.length === 1 ? memes[0] : memes.find(x => norm(sansPrefixe(x.titre)) === norm(sansPrefixe(c.titre)));
+    return g ? { ...c, examen: g.examen, groupes: c.groupes || g.groupes, enseignant: c.enseignant || g.enseignant } : c;
+  });
+  gea.forEach(c => { if (!joursZimbra.has(toISODate(new Date(c.debut)))) out.push(c); });
+  const vus = new Set();
+  return [...out, ...ics].filter(c => c && c.debut && c.fin && !vus.has(c.id) && vus.add(c.id));
+};
+
+// Évaluations prévues : celles du site GEA (charge de travail) et les examens de l'emploi du temps.
+// Renvoie la nouvelle liste d'évaluations, ou null si rien ne change.
+const synchroExamens = (d, cours) => {
+  const ignores = new Set(d.examensIgnores || []);
+  const semPour = (code) => d.semestres.find(s => s.id === d.semestreActif && s.ues.some(u => u.ressources.some(r => r.code === code)))
+    || d.semestres.find(s => s.ues.some(u => u.ressources.some(r => r.code === code)));
+  const voulues = new Map();
+  for (const e of (d.gea && d.gea.evaluations) || []) {
+    const r = trouverRessource(d.ressources, e.module) || ressourceDuTitre(e.module || '', '', d.ressources);
+    const sem = r && semPour(r.code);
+    if (!sem) continue;
+    const date = e.date || (e.entre && e.entre[0]) || null;
+    voulues.set(e.id, { ressource: r.code, semestreId: sem.id, libelle: e.libelle || 'Évaluation', date: date ? toISODate(new Date(date)) : '' });
+  }
+  const valeurs = () => [...voulues.values()];
+  for (const c of cours) {
+    if (!c.examen || c.masque || !c.code) continue;
+    const sem = semPour(c.code);
+    if (!sem) continue;
+    const jour = toISODate(c.debut);
+    if (valeurs().some(v => v.ressource === c.code && v.date === jour)) continue;
+    voulues.set(`edt:${c.id}`, { ressource: c.code, semestreId: sem.id, libelle: c.libelleExamen || 'Examen', date: jour });
+  }
+  let change = false;
+  const presentes = new Set();
+  const suite = [];
+  for (const e of d.evaluations) {
+    if (!e.source) { suite.push(e); continue; }
+    presentes.add(e.source);
+    const v = !ignores.has(e.source) && voulues.get(e.source);
+    if (!v) {
+      if (parseNum(e.note) !== null) suite.push(e); else change = true;
+      continue;
+    }
+    const maj = { date: v.date, ressource: v.ressource, semestreId: v.semestreId, ...(e.libelleAuto ? { libelle: v.libelle } : {}) };
+    if (Object.keys(maj).some(k => e[k] !== maj[k])) { change = true; suite.push({ ...e, ...maj }); } else suite.push(e);
+  }
+  for (const [source, v] of voulues) {
+    if (presentes.has(source) || ignores.has(source)) continue;
+    suite.push({ id: `auto_${source}`, source, libelleAuto: true, note: null, sur: 20, coef: 1, ...v });
+    change = true;
+  }
+  return change ? suite : null;
+};
+
+// Données envoyées par le favori d'import : #import=<gzip en base64url>
+const decoderImport = async (texte) => {
+  const b64 = texte.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((texte.length + 3) % 4);
+  const bin = atob(b64);
+  const octets = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) octets[i] = bin.charCodeAt(i);
+  const flux = new Blob([octets]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(flux).text());
+};
+
+// Code du favori : charge import.js depuis l'adresse de l'application
+const codeFavori = () => {
+  const base = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}`;
+  return `javascript:(()=>{const s=document.createElement('script');s.src='${base}import.js?v='+Date.now();document.body.appendChild(s)})();`;
+};
+
+// Ressource d'un cours Moodle : « (RGEA1H) Comptabilité » → ressources du semestre 1
+const ressourceMoodle = (nom, ressources) => {
+  const sem = (String(nom).match(/\([RS]GEA(\d)/i) || [])[1];
+  const propre = String(nom).replace(/^\([^)]*\)\s*/, '');
+  const candidates = sem ? ressources.filter(r => new RegExp(`^(R|SAE)${sem}\\.`, 'i').test(r.code)) : ressources;
+  return trouverRessource(candidates, propre) || ressourceDuTitre(propre, '', candidates);
+};
+const nomMoodle = (nom) => String(nom || '').replace(/^\([^)]*\)\s*/, '').replace(/\s{2,}/g, ' ').trim();
+const sansEmoji = (t) => String(t || '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\s{2,}/g, ' ').replace(/\s*\|\s*/g, ' · ').trim();
 
 // ============================================================
 // GIST — sauvegarde entre appareils
@@ -883,7 +1028,7 @@ const placerCours = (liste) => {
 };
 
 const CoursLigne = ({ c, onClick, enCours }) => (
-  <button type="button" className={`edt-row ${c.examen ? 'exam' : ''} ${enCours ? 'now' : ''}`} style={{ '--c': c.couleur }} onClick={onClick}>
+  <button type="button" className={`edt-row ${c.examen ? 'exam' : ''} ${enCours ? 'now' : ''} ${c.masque ? 'masque' : ''}`} style={{ '--c': c.couleur }} onClick={onClick}>
     <span className="edt-h f-num"><b>{heure(c.debut)}</b><span>{heure(c.fin)}</span></span>
     <span className="edt-bar" />
     <span className="edt-c">
@@ -902,11 +1047,12 @@ const CoursLigne = ({ c, onClick, enCours }) => (
   </button>
 );
 
-const CoursModal = ({ cours: c, onClose, onGoto, compteurs }) => {
+const CoursModal = ({ cours: c, onClose, onGoto, compteurs, onEdit }) => {
   if (!c) return null;
   const n = c.code ? compteurs(c.code) : null;
   return (
-    <Modal open onClose={onClose} title={c.titre} size="sm">
+    <Modal open onClose={onClose} title={c.titre} size="sm"
+      footer={<Button variant="secondary" onClick={onEdit}><Pencil size={14} /> Modifier</Button>}>
       <div className="flex flex-col gap-4">
         <div className="f-box">
           <Ligne label="Date"><span className="t-ink3">{dateLongue(c.debut)}</span></Ligne>
@@ -924,6 +1070,14 @@ const CoursModal = ({ cours: c, onClose, onGoto, compteurs }) => {
           {c.groupes && <Ligne label="Groupes"><span className="t-ink3 text-right">{c.groupes}</span></Ligne>}
           {c.code && <Ligne label="Ressource"><span className="t-ink3 f-num">{c.code}</span></Ligne>}
           {c.titreBrut && c.titreBrut !== c.titre && <Ligne label="Intitulé"><span className="t-muted text-right text-xs">{c.titreBrut}</span></Ligne>}
+          {(c.modifie || c.masque) && (
+            <Ligne label="Modifié">
+              <span className="flex gap-1">
+                {c.regle && <span className="f-badge f-b-n">Tous les cours de cet intitulé</span>}
+                {c.masque && <span className="f-badge f-b-n">Masqué</span>}
+              </span>
+            </Ligne>
+          )}
         </div>
         {n && (
           <div className="edt-liens">
@@ -943,11 +1097,82 @@ const CoursModal = ({ cours: c, onClose, onGoto, compteurs }) => {
   );
 };
 
-const EdtView = ({ cours, majLe, onRefresh, refreshing, onImportIcs, onOpenSettings, onGoto, compteurs }) => {
+const TYPES_COURS = [{ id: '', label: '—' }, { id: 'CM', label: 'CM' }, { id: 'TD', label: 'TD' }, { id: 'TP', label: 'TP' }];
+
+const CoursEdit = ({ cours: c, ressources, modifs, onSave, onClose }) => {
+  const [portee, setPortee] = useState('titre');
+  const [f, setF] = useState(null);
+  useEffect(() => {
+    if (!c) return;
+    const p = modifs[`id:${c.id}`] ? 'id' : 'titre';
+    setPortee(p);
+    setF({ titre: c.titre, code: c.code, type: c.type, examen: c.examen, salle: c.salle, masque: c.masque });
+  }, [c, modifs]);
+  if (!c || !f) return null;
+  const cle = portee === 'id' ? `id:${c.id}` : cleModifTitre(c.titreBrut);
+  const existant = modifs[cle];
+  const brut = nettoyerCours({ id: c.id, debut: c.debut.toISOString(), fin: c.fin.toISOString(), titre: c.titreBrut, lieu: c.salle }, ressources, {});
+  const enregistrer = () => {
+    const ressource = ressources.find(r => r.code === f.code);
+    const m = {};
+    if (f.code !== brut.code) m.code = f.code;
+    const titreDefaut = ressource ? ressource.nom : brut.titre;
+    if (f.titre.trim() && f.titre.trim() !== titreDefaut) m.titre = f.titre.trim();
+    if (f.type !== brut.type) m.type = f.type;
+    if (f.examen !== c.examen || existant?.examen !== undefined) m.examen = f.examen;
+    if (portee === 'id' && f.salle !== brut.salle) m.salle = f.salle;
+    if (f.masque) m.masque = true;
+    onSave(cle, Object.keys(m).length ? m : null, portee === 'titre' ? `id:${c.id}` : null);
+  };
+  return (
+    <Modal open onClose={onClose} title="Modifier le cours" size="sm"
+      footer={(
+        <>
+          {existant && <Button variant="ghost" onClick={() => onSave(cle, null)} style={{ marginRight: 'auto' }}><RotateCcw size={14} /> Rétablir</Button>}
+          <Button variant="secondary" onClick={onClose}>Annuler</Button>
+          <Button onClick={enregistrer}>Enregistrer</Button>
+        </>
+      )}>
+      <div className="flex flex-col gap-4">
+        <Field label="Appliquer à" as="div">
+          <Seg fill label="Portée" value={portee} onChange={setPortee}
+            options={[{ id: 'titre', label: 'Tous les cours identiques' }, { id: 'id', label: 'Ce cours' }]} />
+        </Field>
+        <p className="t-muted text-xs f-mono">{c.titreBrut}</p>
+        <Field label="Matière">
+          <Select value={f.code} onChange={(e) => {
+            const r = ressources.find(x => x.code === e.target.value);
+            setF(p => ({ ...p, code: e.target.value, titre: r ? r.nom : brut.titre }));
+          }}>
+            <option value="">Aucune</option>
+            {ressources.map(r => <option key={r.code} value={r.code}>{r.code} · {r.nom}</option>)}
+          </Select>
+        </Field>
+        <Field label="Intitulé affiché"><Input value={f.titre} onChange={(e) => setF(p => ({ ...p, titre: e.target.value }))} /></Field>
+        <Field label="Type" as="div">
+          <Seg fill label="Type" value={f.type} onChange={(v) => setF(p => ({ ...p, type: v }))} options={TYPES_COURS} />
+        </Field>
+        {portee === 'id' && <Field label="Salle"><Input value={f.salle} onChange={(e) => setF(p => ({ ...p, salle: e.target.value }))} /></Field>}
+        <div className="f-box">
+          <Ligne label="Examen"><Switch on={f.examen} onChange={(v) => setF(p => ({ ...p, examen: v }))} label="Examen" /></Ligne>
+          <Ligne label="Masquer"><Switch on={f.masque} onChange={(v) => setF(p => ({ ...p, masque: v }))} label="Masquer" /></Ligne>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+const EdtView = ({ cours: tousCours, majLe, onRefresh, refreshing, onImportIcs, onOpenSettings, onGoto, compteurs, ressources, modifs, onModif }) => {
   const [lundi, setLundi] = useState(() => { const t = new Date(); return startOfWeek(t.getDay() === 0 ? addDays(t, 1) : t); });
   const [jour, setJour] = useState(() => { const t = new Date(); return t.getDay() === 0 ? 0 : jourIdx(t); });
   const [mode, setMode] = useState(() => LS.get('etudes_edt_mode', typeof window !== 'undefined' && window.innerWidth < 768 ? 'jour' : 'semaine'));
-  const [detail, setDetail] = useState(null);
+  const [detailId, setDetailId] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [voirMasques, setVoirMasques] = useState(false);
+  const cours = useMemo(() => (voirMasques ? tousCours : tousCours.filter(c => !c.masque)), [tousCours, voirMasques]);
+  const detail = detailId ? tousCours.find(c => c.id === detailId) : null;
+  const enEdition = editId ? tousCours.find(c => c.id === editId) : null;
+  const setDetail = (c) => setDetailId(c ? c.id : null);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
   useEffect(() => { LS.set('etudes_edt_mode', mode); }, [mode]);
@@ -985,6 +1210,11 @@ const EdtView = ({ cours, majLe, onRefresh, refreshing, onImportIcs, onOpenSetti
     touche.current = null;
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) changerJour(dx < 0 ? 1 : -1);
   };
+
+  const nbMasques = useMemo(() => {
+    const fin = addDays(lundi, 7);
+    return tousCours.filter(c => c.masque && c.debut >= lundi && c.debut < fin).length;
+  }, [tousCours, lundi]);
 
   const examens = useMemo(() => {
     const limite = addDays(now, 60);
@@ -1032,6 +1262,12 @@ const EdtView = ({ cours, majLe, onRefresh, refreshing, onImportIcs, onOpenSetti
           <IconButton label="Semaine suivante" onClick={() => allerSemaine(1)} className="f-ibtn-bd"><ChevronRight size={16} /></IconButton>
         </div>
         <Seg label="Affichage" value={mode} onChange={setMode} options={[{ id: 'jour', label: 'Jour' }, { id: 'semaine', label: 'Semaine' }]} />
+        {(nbMasques > 0 || voirMasques) && (
+          <IconButton label={voirMasques ? 'Cacher les cours masqués' : `Afficher les cours masqués (${nbMasques})`} onClick={() => setVoirMasques(v => !v)}
+            className={`f-ibtn-bd ${voirMasques ? 'f-ibtn-on' : ''}`}>
+            {voirMasques ? <Eye size={15} /> : <EyeOff size={15} />}
+          </IconButton>
+        )}
         <IconButton label={titreMaj} onClick={onRefresh} className="f-ibtn-bd only-desk">
           <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
         </IconButton>
@@ -1093,7 +1329,7 @@ const EdtView = ({ cours, majLe, onRefresh, refreshing, onImportIcs, onOpenSetti
                     const h = Math.max(18, c.minutes / 60 * HEURE_PX - 2);
                     return (
                       <button key={c.id} type="button" onClick={() => setDetail(c)}
-                        className={`edt-blk no-touch-grow ${c.examen ? 'exam' : ''}`}
+                        className={`edt-blk no-touch-grow ${c.examen ? 'exam' : ''} ${c.masque ? 'masque' : ''}`}
                         style={{ '--c': c.couleur, top, height: h, left: `calc(${(lane / lanes) * 100}% + 2px)`, width: `calc(${100 / lanes}% - 4px)` }}>
                         <b>{c.titre}</b>
                         {h > 34 && <span className="f-num">{heure(c.debut)}{c.salle ? ` · ${c.salle}` : ''}</span>}
@@ -1122,8 +1358,11 @@ const EdtView = ({ cours, majLe, onRefresh, refreshing, onImportIcs, onOpenSetti
         </Card>
       )}
 
-      <CoursModal cours={detail} onClose={() => setDetail(null)} compteurs={compteurs}
+      <CoursModal cours={enEdition ? null : detail} onClose={() => setDetail(null)} compteurs={compteurs}
+        onEdit={() => setEditId(detail.id)}
         onGoto={(v, code) => { setDetail(null); onGoto(v, code); }} />
+      <CoursEdit cours={enEdition} ressources={ressources} modifs={modifs} onClose={() => setEditId(null)}
+        onSave={(cle, valeur, aRetirer) => { onModif(cle, valeur, aRetirer); setEditId(null); setDetailId(null); }} />
     </div>
   );
 };
@@ -1163,6 +1402,7 @@ const EvalForm = ({ open, initial, sem, ressources, onSave, onDelete, onClose })
   const enregistrer = () => {
     if (!ok) return;
     onSave({
+      ...(f.source ? { source: f.source, libelleAuto: !!f.libelleAuto && f.libelle.trim() === String(initial.libelle || '').trim() } : {}),
       id: f.id || uid('ev'),
       semestreId: f.semestreId || sem.id,
       ressource: f.ressource,
@@ -1225,6 +1465,7 @@ const NotesView = ({ data, commit, focus, signal }) => {
   const moyGen = moyennes.length ? moyennes.reduce((a, b) => a + b, 0) / moyennes.length : null;
   const validees = stats.filter(s => s.moyenne !== null && s.moyenne >= 10).length;
 
+  const absences = useMemo(() => ((data.gea && data.gea.absences) || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))), [data.gea]);
   const [ouverts, setOuverts] = useState(() => new Set(focus && focus.view === 'notes' && focus.matiere ? [focus.matiere] : []));
   const [form, setForm] = useState(null);
   const [maquette, setMaquette] = useState(false);
@@ -1250,8 +1491,12 @@ const NotesView = ({ data, commit, focus, signal }) => {
     setForm(null);
   };
   const supprimer = () => {
-    const id = suppr.id;
-    commit(d => ({ ...d, evaluations: d.evaluations.filter(e => e.id !== id) }));
+    const { id, source } = suppr;
+    commit(d => ({
+      ...d,
+      evaluations: d.evaluations.filter(e => e.id !== id),
+      examensIgnores: source ? Array.from(new Set([...(d.examensIgnores || []), source])) : (d.examensIgnores || []),
+    }));
     setSuppr(null); setForm(null);
   };
   const choisirSemestre = (id) => commit(d => ({ ...d, semestreActif: id }));
@@ -1329,7 +1574,10 @@ const NotesView = ({ data, commit, focus, signal }) => {
                         return (
                           <div key={e.id} className="n-ev">
                             <span className="min-w-0 flex flex-col">
-                              <span className="truncate t-ink">{e.libelle || 'Évaluation'}</span>
+                              <span className="flex items-center gap-2 min-w-0">
+                                {e.source && <CalendarDays size={13} className="t-faint shrink-0" />}
+                                <span className="truncate t-ink">{e.libelle || 'Évaluation'}</span>
+                              </span>
                               <span className="t-muted text-xs f-num">{dateCourteISO(e.date)}{coefEval(e) !== 1 ? ` · coef. ${fmtNum(coefEval(e))}` : ''}</span>
                             </span>
                             {v === null
@@ -1350,6 +1598,32 @@ const NotesView = ({ data, commit, focus, signal }) => {
           </Card>
         );
       })}
+
+      {absences.length > 0 && (
+        <Card className="overflow-hidden">
+          <PanelHead title="Absences">
+            <span className="flex flex-wrap gap-1 justify-end">
+              {Object.entries(absences.reduce((m, a) => { const k = a.statut.split(' ')[0]; m[k] = (m[k] || 0) + 1; return m; }, {}))
+                .map(([k, n]) => <span key={k} className="f-badge f-b-n f-num">{k} {n}</span>)}
+            </span>
+          </PanelHead>
+          {absences.map((a, i) => {
+            const c = nettoyerCours({ id: `abs${i}`, debut: a.date, fin: a.date, titre: a.seance }, data.ressources);
+            return (
+              <div key={i} className={`n-abs ${i > 0 ? 'f-line' : ''}`}>
+                <span className="f-sq" style={{ background: c.couleur }} />
+                <span className="min-w-0 flex flex-col">
+                  <span className="truncate t-ink font-medium">{c.titre}</span>
+                  <span className="t-muted text-xs f-num">{a.date ? `${dateCourte(new Date(a.date))} · ${heure(new Date(a.date))}` : ''}</span>
+                </span>
+                <span className={`f-badge ${a.niveau === 'neg' ? 'f-b-neg' : a.niveau === 'ok' ? 'f-b-ok' : a.niveau === 'wait' ? 'f-b-wait' : 'f-b-n'} n-abs-st`} title={a.statut}>
+                  {a.statut.length > 28 ? a.statut.split(' ')[0] : a.statut}
+                </span>
+              </div>
+            );
+          })}
+        </Card>
+      )}
 
       <EvalForm open={!!form} initial={form} sem={sem} ressources={data.ressources}
         onSave={enregistrer} onDelete={(e) => setSuppr(e)} onClose={() => setForm(null)} />
@@ -2272,6 +2546,225 @@ const QcmView = ({ data, commit, focus, signal }) => {
 };
 
 // ============================================================
+// MOODLE — cours, sections et échéances (importés par le favori)
+// ============================================================
+
+const MOODLE_URL = 'https://ecampus-vert.unicaen.fr/my/';
+const WEBMAIL_URL = 'https://webmail.unicaen.fr/';
+const GEA_URL = 'https://www.iutcaen.unicaen.fr/gea/';
+
+const ICONES_MOODLE = { resource: FileText, folder: FolderOpen, url: ExternalLink, assign: Upload, quiz: ListChecks, page: BookOpen, book: BookOpen, forum: Mail, glossary: BookOpen };
+
+const LienBouton = ({ href, children, variant = 'secondary', className = '' }) => (
+  <a href={href} target="_blank" rel="noopener noreferrer" className={`f-btn ${variant === 'primary' ? 'f-btn-p' : variant === 'ghost' ? 'f-btn-g' : ''} ${className}`}>{children}</a>
+);
+
+const semestreMoodle = (nom) => {
+  const m = String(nom).match(/\([RS]GEA(\d)/i);
+  return m ? `S${m[1]}` : 'Autres';
+};
+
+const MoodleView = ({ data }) => {
+  const mo = data.moodle;
+  const [q, setQ] = useState('');
+  const [semestre, setSemestre] = useState('S1');
+  const [ouvert, setOuvert] = useState(null);
+
+  const cours = useMemo(() => (mo ? mo.cours : []).map(c => {
+    const r = ressourceMoodle(c.nom, data.ressources);
+    return {
+      ...c,
+      titre: nomMoodle(c.nom),
+      sem: semestreMoodle(c.nom),
+      couleur: r ? r.couleur : '#a8a29e',
+      code: r ? r.code : '',
+      nb: c.sections.reduce((s, x) => s + x.cms.length, 0),
+    };
+  }), [mo, data.ressources]);
+  const semestres = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'Autres'].filter(s => cours.some(c => c.sem === s));
+  const semAff = semestres.includes(semestre) ? semestre : (semestres[0] || 'S1');
+
+  const maintenant = Date.now();
+  const echeances = ((mo && mo.echeances) || [])
+    .filter(e => new Date(e.date).getTime() > maintenant - 14 * 86400000)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const n = norm(q);
+  const trouves = n ? cours.flatMap(c => c.sections.flatMap(s => s.cms.filter(m => norm(m.nom).includes(n) || norm(c.titre).includes(n))
+    .map(m => ({ ...m, cours: c, section: s.titre })))).slice(0, 80) : [];
+  const coursOuvert = ouvert ? cours.find(c => c.id === ouvert) : null;
+
+  if (!mo) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title="Moodle" />
+        <Card>
+          <Vide action={<LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Ouvrir Moodle</LienBouton>}>Aucun cours importé</Vide>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Moodle" meta={horodatage(mo.majLe)}>
+        <LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Moodle</LienBouton>
+      </PageHeader>
+
+      {echeances.length > 0 && (
+        <Card className="overflow-hidden">
+          <PanelHead title="Échéances"><span className="t-muted f-num text-xs">{echeances.length}</span></PanelHead>
+          {echeances.map(e => {
+            const d = new Date(e.date);
+            const r = ressourceMoodle(e.cours, data.ressources);
+            return (
+              <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer" className="mo-ech f-row">
+                <span className="f-sq" style={{ background: r ? r.couleur : '#a8a29e' }} />
+                <span className="min-w-0 flex flex-col">
+                  <span className="truncate t-ink font-medium">{sansEmoji(e.nom)}</span>
+                  <span className="truncate t-muted text-xs">{nomMoodle(e.cours)}</span>
+                </span>
+                <span className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="f-num t-ink3 text-xs">{dateCourte(d)} · {heure(d)}</span>
+                  {e.enRetard ? <span className="f-badge f-b-neg">En retard</span> : e.action ? <span className="f-badge f-b-n">{e.action}</span> : null}
+                </span>
+              </a>
+            );
+          })}
+        </Card>
+      )}
+
+      <Card className="overflow-hidden">
+        <div className="f-toolbar">
+          <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un document, un devoir…" style={{ flex: '1 1 220px' }} />
+          {!n && semestres.length > 1 && (
+            <Seg label="Semestre" value={semAff} onChange={setSemestre} options={semestres.map(s => ({ id: s, label: s, count: cours.filter(c => c.sem === s).length }))} />
+          )}
+        </div>
+        {n ? (
+          trouves.length === 0 ? <Vide>Aucun résultat</Vide> : trouves.map((m, i) => {
+            const Ic = ICONES_MOODLE[m.type] || FileText;
+            return (
+              <a key={`${m.url}${i}`} href={m.url} target="_blank" rel="noopener noreferrer" className={`mo-cm f-row ${i > 0 ? 'f-line' : ''}`}>
+                <Ic size={15} className="t-muted" />
+                <span className="min-w-0 flex flex-col">
+                  <span className="truncate t-ink">{m.nom}</span>
+                  <span className="truncate t-muted text-xs">{m.cours.titre} · {m.section}</span>
+                </span>
+                <ExternalLink size={13} className="t-faint" />
+              </a>
+            );
+          })
+        ) : cours.filter(c => c.sem === semAff).map((c, i) => (
+          <button key={c.id} type="button" className={`l-row f-row ${i > 0 ? 'f-line' : ''}`} onClick={() => setOuvert(c.id)}>
+            <span className="l-lib">
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="f-sq" style={{ background: c.couleur }} />
+                <span className="truncate t-ink font-medium">{c.titre}</span>
+              </span>
+              <span className="t-muted text-xs f-num">{pluriel(c.nb, 'élément')}{c.progression != null ? ` · ${Math.round(c.progression)} %` : ''}</span>
+            </span>
+            <span />
+            <ChevronRight size={15} className="t-faint" />
+          </button>
+        ))}
+      </Card>
+
+      {coursOuvert && (
+        <Modal open onClose={() => setOuvert(null)} title={coursOuvert.titre} size="lg"
+          headExtra={<a href={coursOuvert.url} target="_blank" rel="noopener noreferrer" className="f-ibtn" title="Ouvrir dans Moodle" aria-label="Ouvrir dans Moodle"><ExternalLink size={15} /></a>}>
+          <div className="flex flex-col gap-6">
+            {coursOuvert.sections.length === 0 && <Vide>Cours vide</Vide>}
+            {coursOuvert.sections.map((s, i) => (
+              <section key={i} className="flex flex-col">
+                <div className="f-sec-h"><h4>{s.titre}</h4><span className="t-muted f-num text-xs">{s.cms.length}</span></div>
+                <div className="f-box">
+                  {s.cms.map((m, j) => {
+                    const Ic = ICONES_MOODLE[m.type] || FileText;
+                    return (
+                      <a key={j} href={m.url} target="_blank" rel="noopener noreferrer" className="f-ln f-ln-btn mo-lien">
+                        <Ic size={15} className="t-muted shrink-0" />
+                        <span className="flex-1 min-w-0 t-ink">{m.nom}</span>
+                        <ExternalLink size={13} className="t-faint shrink-0" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
+// MAILS — boîte de réception du webmail (récupérée par GitHub Actions)
+// ============================================================
+
+const dateMail = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  if (sameDay(d, new Date())) return heure(d);
+  if (sameDay(d, addDays(new Date(), -1))) return 'hier';
+  return dateCourte(d);
+};
+
+const MailsView = ({ mails, majLe, onRefresh, refreshing }) => {
+  const [ouvert, setOuvert] = useState(null);
+  const [q, setQ] = useState('');
+  const liste = (mails || []).filter(m => !q.trim() || norm(`${m.de} ${m.sujet} ${m.extrait}`).includes(norm(q)));
+  const nonLus = (mails || []).filter(m => m.nonLu).length;
+  const mail = ouvert ? (mails || []).find(m => m.id === ouvert) : null;
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Mails" meta={nonLus ? `${nonLus} non lu${nonLus > 1 ? 's' : ''}` : null}>
+        <IconButton label={`Actualiser · ${horodatage(majLe)}`} onClick={onRefresh} className="f-ibtn-bd only-desk">
+          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+        </IconButton>
+        <LienBouton href={WEBMAIL_URL}><ExternalLink size={14} /> Webmail</LienBouton>
+      </PageHeader>
+      <Card className="overflow-hidden">
+        {(mails || []).length > 0 && (
+          <div className="f-toolbar">
+            <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un mail" style={{ flex: '1 1 220px' }} />
+          </div>
+        )}
+        {liste.length === 0 ? <Vide>Aucun mail</Vide> : liste.map((m, i) => (
+          <button key={m.id} type="button" className={`ml-row f-row ${i > 0 ? 'f-line' : ''} ${m.nonLu ? 'nonlu' : ''}`} onClick={() => setOuvert(m.id)}>
+            <span className="ml-dot" />
+            <span className="min-w-0 flex flex-col" style={{ gap: 2 }}>
+              <span className="flex items-baseline gap-2 min-w-0">
+                <span className="truncate ml-de">{m.de || m.adresse}</span>
+                <span className="ml-auto t-muted f-num text-xs shrink-0">{dateMail(m.date)}</span>
+              </span>
+              <span className="flex items-center gap-1 min-w-0">
+                <span className="truncate t-ink">{m.sujet || '(sans objet)'}</span>
+                {m.pj && <Paperclip size={12} className="t-faint shrink-0" />}
+              </span>
+              <span className="truncate t-muted text-xs">{m.extrait}</span>
+            </span>
+          </button>
+        ))}
+      </Card>
+      {mail && (
+        <Modal open onClose={() => setOuvert(null)} title={mail.sujet || '(sans objet)'} size="md"
+          footer={<LienBouton href={WEBMAIL_URL} variant="primary"><ExternalLink size={14} /> Ouvrir le webmail</LienBouton>}>
+          <div className="flex flex-col gap-4">
+            <div className="f-box">
+              <Ligne label="De"><span className="t-ink3 text-right truncate">{mail.de}{mail.adresse && mail.de !== mail.adresse ? ` · ${mail.adresse}` : ''}</span></Ligne>
+              <Ligne label="Date"><span className="t-ink3 f-num">{new Date(mail.date).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}</span></Ligne>
+            </div>
+            {mail.extrait && <p className="t-ink2 ml-texte">{mail.extrait}</p>}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
 // FEUILLE DE STYLE — variables et classes f-* reprises de Finances
 // ============================================================
 
@@ -2317,7 +2810,7 @@ body, html { margin: 0; font-family: 'Inter', ui-sans-serif, system-ui, -apple-s
 /* Utilitaires */
 .flex { display: flex; } .grid { display: grid; } .relative { position: relative; }
 .flex-col { flex-direction: column; } .flex-wrap { flex-wrap: wrap; } .flex-1 { flex: 1 1 0%; }
-.items-center { align-items: center; } .items-baseline { align-items: baseline; } .self-start { align-self: flex-start; }
+.items-center { align-items: center; } .items-end { align-items: flex-end; } .items-baseline { align-items: baseline; } .self-start { align-self: flex-start; }
 .justify-between { justify-content: space-between; } .justify-end { justify-content: flex-end; } .justify-center { justify-content: center; }
 .gap-1 { gap: 4px; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; } .gap-4 { gap: 16px; } .gap-6 { gap: 24px; }
 .min-w-0 { min-width: 0; } .shrink-0 { flex-shrink: 0; } .mt-auto { margin-top: auto; } .ml-auto { margin-left: auto; }
@@ -2368,8 +2861,8 @@ html.dark .f-logo { box-shadow: 0 0 0 1px var(--line); }
   font-size: clamp(8.5px, 2.6vw, 12px); font-weight: 500; letter-spacing: -0.02em; line-height: 1.1;
 }
 .f-tb.on { background: var(--primary); color: var(--on-primary); }
-.f-tb span { display: none; max-width: 100%; overflow: hidden; white-space: nowrap; }
-@media (min-width: 640px) { .f-tb { height: 64px; } .f-tb span { display: block; } }
+.f-tb-l { display: none; max-width: 100%; overflow: hidden; white-space: nowrap; }
+@media (min-width: 640px) { .f-tb { height: 64px; } .f-tb-l { display: block; } }
 @media (max-width: 1023px) {
   .f-side, .only-desk, .only-desk-i { display: none !important; }
   .f-topbar, .f-bottom { display: flex; }
@@ -2404,7 +2897,8 @@ html.dark .f-logo { box-shadow: 0 0 0 1px var(--line); }
   padding: 9px 16px; background: var(--surface-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line-soft);
 }
 .f-toolbar + div > .f-group-h, .f-toolbar + .f-vide { border-top: 0; }
-.f-line { border-top: 1px solid var(--line-soft); }
+.f-line, .f-app .f-line { border-top: 1px solid var(--line-soft); }
+a.f-btn, a.f-ibtn, a.f-row { text-decoration: none; }
 .f-row { transition: background-color .12s; }
 .f-row:hover { background: var(--surface-2); }
 .f-sec-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; margin-bottom: 6px; }
@@ -2730,6 +3224,34 @@ textarea.f-field { height: auto; padding: 8px 10px; line-height: 1.5; resize: ve
 .qe-ok.on { background: var(--m-ok); border-color: var(--m-ok); color: #fff; }
 .f-inset .f-box { background: var(--surface); }
 
+/* Cours masqués, absences */
+.edt-row.masque, .edt-blk.masque { opacity: .45; }
+.n-abs { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-height: 52px; padding: 8px 16px; }
+.n-abs-st { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+
+/* Moodle */
+.mo-ech, .mo-cm {
+  display: grid; align-items: center; column-gap: 12px; min-height: 54px; padding: 8px 16px; color: inherit; text-decoration: none;
+}
+.mo-ech { grid-template-columns: 8px minmax(0, 1fr) auto; border-top: 1px solid var(--line-soft); }
+.f-ph + .mo-ech { border-top: 0; }
+.mo-cm { grid-template-columns: 16px minmax(0, 1fr) 14px; }
+.mo-lien { color: inherit; text-decoration: none; }
+
+/* Mails */
+.ml-row { display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 10px; width: 100%; padding: 10px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.ml-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: transparent; }
+.ml-row.nonlu .ml-dot { background: var(--m-ok); }
+.ml-de { color: var(--ink-3); font-weight: 500; }
+.ml-row.nonlu .ml-de { color: var(--ink); font-weight: 600; }
+.ml-texte { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+
+/* Navigation : compteurs */
+.f-nav .ct { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.f-tb-dot { position: absolute; top: -2px; right: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--m-ok); box-shadow: 0 0 0 2px var(--bg); }
+.f-tb.on .f-tb-dot { box-shadow: 0 0 0 2px var(--primary); }
+.f-tb-ic { position: relative; display: inline-flex; }
+
 /* Mobile : pas d'effet élastique, pas de zoom */
 html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .f-app { overflow-x: clip; }
@@ -2761,7 +3283,7 @@ const SettingsModal = ({
   open, onClose,
   gistId, gistUser, isConnected, syncStatus, syncError, lastSyncAt, onConnect, onDisconnect, onForceSync,
   themePref, onThemeChange, bgEnabled, onBgToggle,
-  repo, onRepoChange, edtMaj, nbImport, onImportIcs, onClearIcs,
+  repo, onRepoChange, edtMaj, nbImport, onImportIcs, onClearIcs, geaMaj, moodleMaj, onCopierFavori,
   onExport, onImportClick, compte,
 }) => {
   const [tokenInput, setTokenInput] = useState('');
@@ -2843,9 +3365,18 @@ const SettingsModal = ({
         </section>
 
         <section className="flex flex-col">
-          <Titre>Emploi du temps</Titre>
+          <Titre>Unicaen</Titre>
           <div className="f-box">
-            <Ligne label="Unicaen"><span className="t-ink3 f-num">{horodatage(edtMaj)}</span></Ligne>
+            <Ligne label="EDT et mails"><span className="t-ink3 f-num">{horodatage(edtMaj)}</span></Ligne>
+            <Ligne label="Site GEA">
+              <span className="t-ink3 f-num">{horodatage(geaMaj)}</span>
+              <a href={GEA_URL} target="_blank" rel="noopener noreferrer" className="f-ibtn" aria-label="Ouvrir le site GEA" title="Ouvrir le site GEA"><ExternalLink size={14} /></a>
+            </Ligne>
+            <Ligne label="Moodle">
+              <span className="t-ink3 f-num">{horodatage(moodleMaj)}</span>
+              <a href={MOODLE_URL} target="_blank" rel="noopener noreferrer" className="f-ibtn" aria-label="Ouvrir Moodle" title="Ouvrir Moodle"><ExternalLink size={14} /></a>
+            </Ligne>
+            <Ligne label="Favori d'import" icon={Copy} onClick={onCopierFavori}><span className="t-muted text-xs">Copier</span></Ligne>
             <Ligne label="Dépôt GitHub">
               <input value={repo} onChange={(e) => onRepoChange(e.target.value.trim())} placeholder="compte/etudes"
                 className="f-field f-field-sm f-mono" style={{ maxWidth: 190, fontSize: 12.5 }} aria-label="Dépôt GitHub" autoCapitalize="off" autoCorrect="off" />
@@ -2924,6 +3455,8 @@ const NAV = [
   { id: 'notes', label: 'Notes', court: 'Notes', icon: GraduationCap },
   { id: 'fiches', label: 'Fiches', court: 'Fiches', icon: FileText },
   { id: 'qcm', label: 'QCM', court: 'QCM', icon: ListChecks },
+  { id: 'moodle', label: 'Moodle', court: 'Moodle', icon: BookOpen },
+  { id: 'mails', label: 'Mails', court: 'Mails', icon: Mail },
 ];
 
 function AppInner() {
@@ -3011,6 +3544,7 @@ function AppInner() {
   const [edtBusy, setEdtBusy] = useState(false);
   const [toast, setToast] = useState('');
   const chargeRef = useRef(false);
+  const [pret, setPret] = useState(() => !(LS.get('etudes_gist_token') && LS.get('etudes_gist_id')));
   const dejaEnvoye = useRef(null);
   const saveTimer = useRef(null);
   const isGistConnected = !!(gistToken && gistId);
@@ -3042,9 +3576,11 @@ function AppInner() {
       chargeRef.current = true;
       setSyncStatus('saved');
       if (!pris) { dejaEnvoye.current = null; setDataRaw(d => ({ ...d })); }
+      setPret(true);
       return edt;
     } catch (err) {
       setSyncStatus('error'); setSyncError(err.message);
+      setPret(true);
       return null;
     }
   };
@@ -3110,14 +3646,56 @@ function AppInner() {
 
   // ===== Emploi du temps =====
   const ressources = data.ressources;
-  const cours = useMemo(() => {
-    const vus = new Set();
-    return [...(edtDistant?.cours || []), ...(data.edtImport || [])]
-      .filter(c => c && c.debut && c.fin && !vus.has(c.id) && vus.add(c.id))
-      .map(c => nettoyerCours(c, ressources))
-      .filter(c => !Number.isNaN(c.debut.getTime()))
-      .sort((a, b) => a.debut - b.debut);
-  }, [edtDistant, data.edtImport, ressources]);
+  const cours = useMemo(() => fusionnerCours(edtDistant?.cours || [], (data.gea && data.gea.edt) || [], data.edtImport || [])
+    .map(c => nettoyerCours(c, ressources, data.edtModifs || {}))
+    .filter(c => !Number.isNaN(c.debut.getTime()))
+    .sort((a, b) => a.debut - b.debut), [edtDistant, data.gea, data.edtImport, data.edtModifs, ressources]);
+
+  const modifierCours = (cle, valeur, aRetirer) => commit(d => {
+    const m = { ...(d.edtModifs || {}) };
+    if (valeur) m[cle] = valeur; else delete m[cle];
+    if (aRetirer) delete m[aRetirer];
+    return { ...d, edtModifs: m };
+  });
+
+  // Examens de l'EDT et évaluations du site GEA → notes à venir
+  useEffect(() => {
+    if (!pret) return;
+    if (synchroExamens(dataRef.current, cours)) {
+      commit(d => ({ ...d, evaluations: synchroExamens(d, cours) || d.evaluations }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pret, cours, data.gea, data.semestres, data.ressources, data.examensIgnores]);
+
+  // Import envoyé par le favori (#import=…), appliqué une fois les données à jour
+  const [importRecu, setImportRecu] = useState(null);
+  useEffect(() => {
+    const lire = () => {
+      const h = window.location.hash || '';
+      if (!h.startsWith('#import=')) return;
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      decoderImport(h.slice(8)).then(setImportRecu).catch(() => montrer('Import illisible'));
+    };
+    lire();
+    window.addEventListener('hashchange', lire);
+    return () => window.removeEventListener('hashchange', lire);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!pret || !importRecu) return;
+    const imp = importRecu;
+    setImportRecu(null);
+    if (imp.source === 'gea') {
+      commit(d => ({ ...d, gea: { majLe: imp.majLe, absences: imp.absences || [], evaluations: imp.evaluations || [], edt: imp.edt || [] } }));
+      montrer(`Site GEA : ${pluriel((imp.evaluations || []).length, 'évaluation')}, ${pluriel((imp.absences || []).length, 'absence')}, ${(imp.edt || []).length} cours`);
+      goTo('notes');
+    } else if (imp.source === 'moodle') {
+      commit(d => ({ ...d, moodle: { majLe: imp.majLe, cours: imp.cours || [], echeances: imp.echeances || [] } }));
+      montrer(`Moodle : ${pluriel((imp.cours || []).length, 'cours', 'cours')}`);
+      goTo('moodle');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pret, importRecu]);
 
   const actualiserEdt = async () => {
     if (edtBusy) return;
@@ -3174,6 +3752,10 @@ function AppInner() {
     };
   }, [data, ressources]);
 
+  const copierFavori = async () => {
+    try { await navigator.clipboard.writeText(codeFavori()); montrer('Favori copié'); } catch { montrer('Copie impossible'); }
+  };
+
   // ===== Import / export =====
   const jsonRef = useRef(null);
   const exporter = () => telecharger(`etudes-${toISODate(new Date())}.json`, JSON.stringify(data, null, 2));
@@ -3200,7 +3782,11 @@ function AppInner() {
     notes: [{ label: 'Ajouter une note', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
     fiches: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouvelle fiche', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
     qcm: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouveau QCM', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
+    moodle: [],
+    mails: [{ label: 'Actualiser', icon: <RefreshCw size={18} className={edtBusy ? 'animate-spin' : ''} />, fn: actualiserEdt }],
   }[view];
+  const mails = (edtDistant && edtDistant.mails) || [];
+  const nonLus = mails.filter(m => m.nonLu).length;
 
   const compte = `${pluriel(data.evaluations.length, 'note')} · ${pluriel(data.fiches.length, 'fiche')} · ${pluriel(data.qcms.length, 'QCM', 'QCM')}`;
 
@@ -3222,6 +3808,7 @@ function AppInner() {
                 return (
                   <button key={item.id} type="button" onClick={() => goTo(item.id)} aria-current={on ? 'page' : undefined} className={`f-nav no-touch-grow ${on ? 'on' : ''}`}>
                     <Icon size={16} strokeWidth={on ? 2.1 : 1.8} />{item.label}
+                    {item.id === 'mails' && nonLus > 0 && <span className="ct">{nonLus}</span>}
                   </button>
                 );
               })}
@@ -3259,11 +3846,13 @@ function AppInner() {
                 {view === 'edt' && (
                   <EdtView cours={cours} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy}
                     onImportIcs={() => icsRef.current?.click()} onOpenSettings={() => setShowSettings(true)}
-                    onGoto={goTo} compteurs={compteurs} />
+                    onGoto={goTo} compteurs={compteurs} ressources={ressources} modifs={data.edtModifs || {}} onModif={modifierCours} />
                 )}
                 {view === 'notes' && <NotesView key={focus?.n || 'notes'} data={data} commit={commit} focus={focus} signal={signal} />}
                 {view === 'fiches' && <FichesView key={focus?.n || 'fiches'} data={data} commit={commit} focus={focus} signal={signal} />}
                 {view === 'qcm' && <QcmView key={focus?.n || 'qcm'} data={data} commit={commit} focus={focus} signal={signal} />}
+                {view === 'moodle' && <MoodleView data={data} />}
+                {view === 'mails' && <MailsView mails={mails} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy} />}
               </div>
             </main>
           </div>
@@ -3276,8 +3865,11 @@ function AppInner() {
             return (
               <button key={item.id} type="button" onClick={() => goTo(item.id)} aria-label={item.label} title={item.label}
                 aria-current={on ? 'page' : undefined} className={`f-tb no-touch-grow ${on ? 'on' : ''}`}>
-                <Icon size={25} strokeWidth={on ? 2.1 : 1.8} />
-                <span>{item.court}</span>
+                <span className="f-tb-ic">
+                  <Icon size={25} strokeWidth={on ? 2.1 : 1.8} />
+                  {item.id === 'mails' && nonLus > 0 && <i className="f-tb-dot" />}
+                </span>
+                <span className="f-tb-l">{item.court}</span>
               </button>
             );
           })}
@@ -3297,6 +3889,7 @@ function AppInner() {
           onConnect={connectGist} onDisconnect={disconnectGist} onForceSync={() => chargerGist()}
           themePref={themePref} onThemeChange={setThemePref} bgEnabled={bgEnabled} onBgToggle={() => setBgEnabled(v => !v)}
           repo={repo} onRepoChange={setRepo} edtMaj={edtDistant?.majLe} nbImport={(data.edtImport || []).length}
+          geaMaj={data.gea?.majLe} moodleMaj={data.moodle?.majLe} onCopierFavori={copierFavori}
           onImportIcs={() => icsRef.current?.click()}
           onClearIcs={() => { if (window.confirm('Effacer les cours importés ?')) commit(d => ({ ...d, edtImport: [] })); }}
           onExport={exporter} onImportClick={() => jsonRef.current?.click()} compte={compte}
