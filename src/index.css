@@ -1,0 +1,2 @@
+html, body { margin: 0; background-color: #fafaf9; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+html.dark, html.dark body { background-color: #1c1917; }
