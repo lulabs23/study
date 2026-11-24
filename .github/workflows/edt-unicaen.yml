@@ -1,0 +1,36 @@
+name: EDT Unicaen
+
+on:
+  schedule:
+    - cron: '*/30 5-21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edt-unicaen
+  cancel-in-progress: true
+
+jobs:
+  edt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Récupérer l'emploi du temps
+        run: node scripts/edt-unicaen.mjs
+        env:
+          UNICAEN_USER: ${{ secrets.UNICAEN_USER }}
+          UNICAEN_PASSWORD: ${{ secrets.UNICAEN_PASSWORD }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          MAILS: ${{ vars.MAILS }}
+          MOODLE_TOKEN: ${{ secrets.MOODLE_TOKEN }}
