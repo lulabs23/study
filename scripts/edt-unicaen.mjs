@@ -71,11 +71,12 @@ const telecharger = (compte) => fetch(
 );
 
 let reponse;
+let compte = UTILISATEUR;
 try {
   reponse = await telecharger(UTILISATEUR);
   if (reponse.status === 401 || reponse.status === 404) {
-    const autre = UTILISATEUR.includes('@') ? UTILISATEUR.split('@')[0] : `${UTILISATEUR}@etu.unicaen.fr`;
-    reponse = await telecharger(autre);
+    compte = UTILISATEUR.includes('@') ? UTILISATEUR.split('@')[0] : `${UTILISATEUR}@etu.unicaen.fr`;
+    reponse = await telecharger(compte);
   }
 } catch (e) {
   echec(`Webmail Unicaen injoignable (${e.cause?.code || e.message}).`);
@@ -117,6 +118,40 @@ for (const a of corps.appt || []) {
   }
 }
 
+// ---------- Mails (boîte de réception) ----------
+// Seuls l'expéditeur, l'objet, la date et le début du message sont conservés.
+const MAILS_ACTIFS = !/^(non|0|false)$/i.test(env.MAILS || '');
+let mails = null;
+if (MAILS_ACTIFS) {
+  try {
+    const r = await fetch(`${SERVEUR}/home/${encodeURIComponent(compte).replace(/%40/g, '@')}/inbox?fmt=json&limit=40`, {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${compte}:${MOT_DE_PASSE}`).toString('base64')}`,
+        Accept: 'application/json',
+        'User-Agent': 'Etudes (GitHub Actions)',
+      },
+    });
+    if (!r.ok) throw new Error(`réponse ${r.status}`);
+    const t = await r.text();
+    const j = t.trim() ? JSON.parse(t) : {};
+    mails = (j.m || []).map(m => {
+      const exp = (m.e || []).find(x => x.t === 'f') || {};
+      return {
+        id: String(m.id),
+        de: exp.p || exp.d || exp.a || '',
+        adresse: exp.a || '',
+        sujet: m.su || '',
+        date: new Date(Number(m.d) || Date.now()).toISOString(),
+        extrait: String(m.fr || '').slice(0, 400),
+        nonLu: /u/.test(m.f || ''),
+        pj: /a/.test(m.f || ''),
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
+  } catch (e) {
+    console.log(`::warning::Mails non récupérés (${e.message}).`);
+  }
+}
+
 // ---------- Gist ----------
 const gh = async (chemin, options = {}) => {
   const res = await fetch(`https://api.github.com${chemin}`, {
@@ -145,12 +180,14 @@ if (!gistId) {
 // Les cours passés, hors de la plage téléchargée, sont conservés pour l'historique
 const gist = await gh(`/gists/${gistId}`);
 let anciens = [];
+let anciensMails = [];
 const fichier = gist.files && gist.files[FICHIER_EDT];
 if (fichier) {
   try {
-    const contenu = fichier.truncated ? await (await fetch(fichier.raw_url)).text() : fichier.content;
+    const contenu = JSON.parse(fichier.truncated ? await (await fetch(fichier.raw_url)).text() : fichier.content);
     const limite = ajouterJours(maintenant, -JOURS_CONSERVES).toISOString();
-    anciens = (JSON.parse(contenu).cours || []).filter(c => c.debut < debutPlage.toISOString() && c.debut >= limite);
+    anciens = (contenu.cours || []).filter(c => c.debut < debutPlage.toISOString() && c.debut >= limite);
+    anciensMails = contenu.mails || [];
   } catch { anciens = []; }
 }
 
@@ -161,6 +198,7 @@ const edt = {
   majLe: maintenant.toISOString(),
   plage: { debut: debutPlage.toISOString(), fin: finPlage.toISOString() },
   cours: tous,
+  mails: mails || anciensMails,
 };
 
 await gh(`/gists/${gistId}`, {
@@ -168,4 +206,4 @@ await gh(`/gists/${gistId}`, {
   body: JSON.stringify({ files: { [FICHIER_EDT]: { content: JSON.stringify(edt) } } }),
 });
 
-console.log(`${cours.length} cours récupérés (${formatZimbra(debutPlage)} → ${formatZimbra(finPlage)}), ${anciens.length} conservés.`);
+console.log(`${cours.length} cours récupérés (${formatZimbra(debutPlage)} → ${formatZimbra(finPlage)}), ${anciens.length} conservés${mails ? `, ${mails.length} mails` : ''}.`);
