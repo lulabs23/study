@@ -395,15 +395,18 @@ const sansPrefixe = (t) => String(t || '').trim().replace(/^S\d+\s*-\s*(?:[A-Z]{
 
 // S1-CM : cours magistral ; S1-C : groupe de TD ; S1-C2 : groupe de TP
 const typeCours = (titre, groupes) => {
-  const m = String(titre || '').trim().match(/^S\d+\s*-\s*([A-Z]{1,6})(\d?)(?=\s|$)/);
-  if (m && ['CM', 'TD', 'TP'].includes(m[1])) return m[1];
+  const t = String(titre || '').trim();
   const g = String(groupes || '').trim();
+  const estTP = /^TP/i.test(g) || /^S\d+\s*-\s*[A-Z]{0,3}2\b/.test(t) || /\bTP\b/.test(t);
+  if (!estTP && /\bCC\s?\d*\b/.test(t)) return 'CC';
+  const m = t.match(/^S\d+\s*-\s*([A-Z]{1,6})(\d?)(?=\s|$)/);
+  if (m && ['CM', 'TD', 'TP'].includes(m[1])) return m[1];
   if (/^TP/i.test(g)) return 'TP';
   if (/^TD/i.test(g)) return 'TD';
   if (m) return m[1].length <= 2 ? (m[2] ? 'TP' : 'TD') : '';
-  if (/\bCM\b/.test(titre)) return 'CM';
-  if (/\bTP\b/.test(titre)) return 'TP';
-  if (/\bTD\b/.test(titre)) return 'TD';
+  if (/\bCM\b/.test(t)) return 'CM';
+  if (/\bTP\b/.test(t)) return 'TP';
+  if (/\bTD\b/.test(t)) return 'TD';
   return '';
 };
 
@@ -458,8 +461,9 @@ const nettoyerCours = (c, ressources, modifs = {}) => {
   const groupes = c.groupes || champDescription(desc, /Groupes? d'[ée]tudiants\s*:\s*([^\n]+)/i);
   const nettoye = sansPrefixe(titre.replace(/\[[^\]]*\]/g, ' ').replace(/\s+-\s+Salle\s*:.*$/i, ' ').replace(/\s{2,}/g, ' '));
   const parties = titre.split(/\s[—–]\s/);
+  const typeEff = m.type !== undefined ? m.type : typeCours(titre, groupes);
   const examenSource = typeof c.examen === 'boolean' ? c.examen : estExamenTitre(titre);
-  const examen = typeof m.examen === 'boolean' ? m.examen : examenSource;
+  const examen = typeof m.examen === 'boolean' ? m.examen : (typeEff === 'CC' || examenSource);
   const lieu = c.lieu || champDescription(desc, /Salles?\s*:\s*([^\n]+)/i);
   return {
     id: c.id || `${c.debut}_${titre}`,
@@ -469,7 +473,7 @@ const nettoyerCours = (c, ressources, modifs = {}) => {
     libelleExamen: parties.length > 1 ? parties.slice(0, -1).join(' — ').trim() : 'Examen',
     code: ressource ? ressource.code : '',
     couleur: ressource ? ressource.couleur : '#a8a29e',
-    type: m.type !== undefined ? m.type : typeCours(titre, groupes),
+    type: typeEff,
     salle: m.salle !== undefined ? m.salle : salleCourte(lieu),
     enseignant: c.enseignant || champDescription(desc, /Enseignants?\s*:\s*([^\n]+)/i),
     groupes,
@@ -490,12 +494,15 @@ const fusionnerCours = (zimbra, gea, ics) => {
   const geaParMinute = new Map();
   gea.forEach(c => { const k = minuteISO(c.debut); geaParMinute.set(k, [...(geaParMinute.get(k) || []), c]); });
   const joursZimbra = new Set(zimbra.map(c => toISODate(new Date(c.debut))));
+  const apparies = new Set();
   const out = zimbra.map(c => {
     const memes = geaParMinute.get(minuteISO(c.debut)) || [];
     const g = memes.length === 1 ? memes[0] : memes.find(x => norm(sansPrefixe(x.titre)) === norm(sansPrefixe(c.titre)));
+    if (g) apparies.add(g.id);
     return g ? { ...c, examen: g.examen, groupes: c.groupes || g.groupes, enseignant: c.enseignant || g.enseignant } : c;
   });
-  gea.forEach(c => { if (!joursZimbra.has(toISODate(new Date(c.debut)))) out.push(c); });
+  // Cours du site GEA non appariés : gardés si le jour n'est pas couvert par le webmail, ou si c'est un examen
+  gea.forEach(c => { if (!apparies.has(c.id) && (!joursZimbra.has(toISODate(new Date(c.debut))) || c.examen || estExamenTitre(c.titre))) out.push(c); });
   const vus = new Set();
   return [...out, ...ics].filter(c => c && c.debut && c.fin && !vus.has(c.id) && vus.add(c.id));
 };
@@ -517,6 +524,7 @@ const synchroExamens = (d, cours) => {
   const valeurs = () => [...voulues.values()];
   for (const c of cours) {
     if (!c.examen || c.masque || !c.code) continue;
+    if (String(c.id).startsWith('geaeval_')) continue;
     const sem = semPour(c.code);
     if (!sem) continue;
     const jour = toISODate(c.debut);
@@ -1097,7 +1105,7 @@ const CoursModal = ({ cours: c, onClose, onGoto, compteurs, onEdit }) => {
   );
 };
 
-const TYPES_COURS = [{ id: '', label: '—' }, { id: 'CM', label: 'CM' }, { id: 'TD', label: 'TD' }, { id: 'TP', label: 'TP' }];
+const TYPES_COURS = [{ id: '', label: '—' }, { id: 'CM', label: 'CM' }, { id: 'TD', label: 'TD' }, { id: 'TP', label: 'TP' }, { id: 'CC', label: 'CC' }];
 
 const CoursEdit = ({ cours: c, ressources, modifs, onSave, onClose }) => {
   const [portee, setPortee] = useState('titre');
@@ -1150,7 +1158,7 @@ const CoursEdit = ({ cours: c, ressources, modifs, onSave, onClose }) => {
         </Field>
         <Field label="Intitulé affiché"><Input value={f.titre} onChange={(e) => setF(p => ({ ...p, titre: e.target.value }))} /></Field>
         <Field label="Type" as="div">
-          <Seg fill label="Type" value={f.type} onChange={(v) => setF(p => ({ ...p, type: v }))} options={TYPES_COURS} />
+          <Seg fill label="Type" value={f.type} onChange={(v) => setF(p => ({ ...p, type: v, examen: v === 'CC' ? true : p.examen }))} options={TYPES_COURS} />
         </Field>
         {portee === 'id' && <Field label="Salle"><Input value={f.salle} onChange={(e) => setF(p => ({ ...p, salle: e.target.value }))} /></Field>}
         <div className="f-box">
@@ -2564,13 +2572,16 @@ const semestreMoodle = (nom) => {
   return m ? `S${m[1]}` : 'Autres';
 };
 
-const MoodleView = ({ data }) => {
+const MoodleView = ({ data, robot }) => {
   const mo = data.moodle;
+  const notesRobot = ((robot && robot.cours) || []).filter(c => c.note && !/^[-–—]$/.test(String(c.note).trim()));
+  const noteParNom = Object.fromEntries(((robot && robot.cours) || []).map(c => [norm(nomMoodle(c.nom)), c.note]));
+  const majGlobale = [mo && mo.majLe, robot && robot.majLe].filter(Boolean).sort().pop();
   const [q, setQ] = useState('');
   const [semestre, setSemestre] = useState('S1');
   const [ouvert, setOuvert] = useState(null);
 
-  const cours = useMemo(() => (mo ? mo.cours : []).map(c => {
+  const cours = useMemo(() => ((mo && mo.cours) || (robot && robot.cours) || []).map(c => {
     const r = ressourceMoodle(c.nom, data.ressources);
     return {
       ...c,
@@ -2578,9 +2589,11 @@ const MoodleView = ({ data }) => {
       sem: semestreMoodle(c.nom),
       couleur: r ? r.couleur : '#a8a29e',
       code: r ? r.code : '',
-      nb: c.sections.reduce((s, x) => s + x.cms.length, 0),
+      note: noteParNom[norm(nomMoodle(c.nom))] || null,
+      sections: c.sections || [],
+      nb: (c.sections || []).reduce((s, x) => s + x.cms.length, 0),
     };
-  }), [mo, data.ressources]);
+  }), [mo, robot, data.ressources]);
   const semestres = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'Autres'].filter(s => cours.some(c => c.sem === s));
   const semAff = semestres.includes(semestre) ? semestre : (semestres[0] || 'S1');
 
@@ -2594,22 +2607,41 @@ const MoodleView = ({ data }) => {
     .map(m => ({ ...m, cours: c, section: s.titre })))).slice(0, 80) : [];
   const coursOuvert = ouvert ? cours.find(c => c.id === ouvert) : null;
 
-  if (!mo) {
+  if (!mo && notesRobot.length === 0 && !(robot && robot.cours && robot.cours.length)) {
     return (
       <div className="flex flex-col gap-4">
         <PageHeader title="Moodle" />
         <Card>
-          <Vide action={<LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Ouvrir Moodle</LienBouton>}>Aucun cours importé</Vide>
+          <Vide action={<LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Ouvrir Moodle</LienBouton>}>Aucune donnée Moodle</Vide>
         </Card>
       </div>
     );
   }
 
+  // Notes récupérées par le jeton : liste à part, et report sur les cours
+  const notes = (notesRobot.length ? notesRobot : ((robot && robot.cours) || [])).map(c => {
+    const r = ressourceMoodle(c.nom, data.ressources);
+    return { nom: nomMoodle(c.nom), note: c.note, couleur: r ? r.couleur : '#a8a29e' };
+  }).filter(c => c.note && !/^[-–—]$/.test(String(c.note).trim()));
+
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Moodle" meta={horodatage(mo.majLe)}>
+      <PageHeader title="Moodle" meta={horodatage(majGlobale)}>
         <LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Moodle</LienBouton>
       </PageHeader>
+
+      {notes.length > 0 && (
+        <Card className="overflow-hidden">
+          <PanelHead title="Notes"><span className="t-muted f-num text-xs">{notes.length}</span></PanelHead>
+          {notes.map((c, i) => (
+            <div key={i} className={`mo-note ${i > 0 ? 'f-line' : ''}`}>
+              <span className="f-sq" style={{ background: c.couleur }} />
+              <span className="truncate t-ink font-medium">{c.nom}</span>
+              <span className="f-num font-semibold t-ink shrink-0">{String(c.note).replace('.', ',')}</span>
+            </div>
+          ))}
+        </Card>
+      )}
 
       {echeances.length > 0 && (
         <Card className="overflow-hidden">
@@ -2656,13 +2688,13 @@ const MoodleView = ({ data }) => {
             );
           })
         ) : cours.filter(c => c.sem === semAff).map((c, i) => (
-          <button key={c.id} type="button" className={`l-row f-row ${i > 0 ? 'f-line' : ''}`} onClick={() => setOuvert(c.id)}>
+          <button key={c.id} type="button" className={`l-row f-row ${i > 0 ? 'f-line' : ''}`} onClick={() => (c.sections.length ? setOuvert(c.id) : window.open(c.url, '_blank', 'noopener'))}>
             <span className="l-lib">
               <span className="flex items-center gap-2 min-w-0">
                 <span className="f-sq" style={{ background: c.couleur }} />
                 <span className="truncate t-ink font-medium">{c.titre}</span>
               </span>
-              <span className="t-muted text-xs f-num">{pluriel(c.nb, 'élément')}{c.progression != null ? ` · ${Math.round(c.progression)} %` : ''}</span>
+              <span className="t-muted text-xs f-num">{c.nb ? pluriel(c.nb, 'élément') : 'Ouvrir dans Moodle'}{c.progression != null ? ` · ${Math.round(c.progression)} %` : ''}{c.note && !/^[-–—]$/.test(String(c.note).trim()) ? ` · ${String(c.note).replace('.', ',')}` : ''}</span>
             </span>
             <span />
             <ChevronRight size={15} className="t-faint" />
@@ -2756,7 +2788,9 @@ const MailsView = ({ mails, majLe, onRefresh, refreshing }) => {
               <Ligne label="De"><span className="t-ink3 text-right truncate">{mail.de}{mail.adresse && mail.de !== mail.adresse ? ` · ${mail.adresse}` : ''}</span></Ligne>
               <Ligne label="Date"><span className="t-ink3 f-num">{new Date(mail.date).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}</span></Ligne>
             </div>
-            {mail.extrait && <p className="t-ink2 ml-texte">{mail.extrait}</p>}
+            {(mail.corps || mail.extrait)
+              ? <p className="t-ink2 ml-texte">{mail.corps || mail.extrait}</p>
+              : <p className="t-muted text-xs">Contenu complet dans le webmail.</p>}
           </div>
         </Modal>
       )}
@@ -3236,6 +3270,7 @@ textarea.f-field { height: auto; padding: 8px 10px; line-height: 1.5; resize: ve
 .mo-ech { grid-template-columns: 8px minmax(0, 1fr) auto; border-top: 1px solid var(--line-soft); }
 .f-ph + .mo-ech { border-top: 0; }
 .mo-cm { grid-template-columns: 16px minmax(0, 1fr) 14px; }
+.mo-note { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-height: 46px; padding: 8px 16px; }
 .mo-lien { color: inherit; text-decoration: none; }
 
 /* Mails */
@@ -3452,11 +3487,11 @@ const ParticleWaveBackground = ({ isDark }) => {
 
 const NAV = [
   { id: 'edt', label: 'Emploi du temps', court: 'EDT', icon: CalendarDays },
+  { id: 'mails', label: 'Mails', court: 'Mails', icon: Mail },
   { id: 'notes', label: 'Notes', court: 'Notes', icon: GraduationCap },
   { id: 'fiches', label: 'Fiches', court: 'Fiches', icon: FileText },
   { id: 'qcm', label: 'QCM', court: 'QCM', icon: ListChecks },
   { id: 'moodle', label: 'Moodle', court: 'Moodle', icon: BookOpen },
-  { id: 'mails', label: 'Mails', court: 'Mails', icon: Mail },
 ];
 
 function AppInner() {
@@ -3646,10 +3681,24 @@ function AppInner() {
 
   // ===== Emploi du temps =====
   const ressources = data.ressources;
-  const cours = useMemo(() => fusionnerCours(edtDistant?.cours || [], (data.gea && data.gea.edt) || [], data.edtImport || [])
-    .map(c => nettoyerCours(c, ressources, data.edtModifs || {}))
-    .filter(c => !Number.isNaN(c.debut.getTime()))
-    .sort((a, b) => a.debut - b.debut), [edtDistant, data.gea, data.edtImport, data.edtModifs, ressources]);
+  const cours = useMemo(() => {
+    const modifs = data.edtModifs || {};
+    const base = fusionnerCours(edtDistant?.cours || [], (data.gea && data.gea.edt) || [], data.edtImport || [])
+      .map(c => nettoyerCours(c, ressources, modifs)).filter(c => !Number.isNaN(c.debut.getTime()));
+    // Examens datés du site GEA (« charge de travail ») absents de l'emploi du temps
+    const examensGea = ((data.gea && data.gea.evaluations) || []).filter(e => e.date && e.heure).map(e => {
+      const r = trouverRessource(ressources, e.module) || ressourceDuTitre(e.module || e.libelle || '', '', ressources);
+      const code = r ? r.code : '';
+      const debut = new Date(e.date);
+      return nettoyerCours({ id: `geaeval_${e.id}`, debut: debut.toISOString(), fin: new Date(debut.getTime() + 2 * 3600000).toISOString(),
+        titre: code ? `${e.libelle} [MOD:${code}]` : e.libelle }, ressources, modifs);
+    }).map(c => ({ ...c, examen: !c.masque, sourceEval: true }));
+    const fusion = [...base];
+    for (const ex of examensGea) {
+      if (!Number.isNaN(ex.debut.getTime()) && !fusion.some(c => c.examen && c.code && c.code === ex.code && sameDay(c.debut, ex.debut))) fusion.push(ex);
+    }
+    return fusion.sort((a, b) => a.debut - b.debut);
+  }, [edtDistant, data.gea, data.edtImport, data.edtModifs, ressources]);
 
   const modifierCours = (cle, valeur, aRetirer) => commit(d => {
     const m = { ...(d.edtModifs || {}) };
@@ -3851,7 +3900,7 @@ function AppInner() {
                 {view === 'notes' && <NotesView key={focus?.n || 'notes'} data={data} commit={commit} focus={focus} signal={signal} />}
                 {view === 'fiches' && <FichesView key={focus?.n || 'fiches'} data={data} commit={commit} focus={focus} signal={signal} />}
                 {view === 'qcm' && <QcmView key={focus?.n || 'qcm'} data={data} commit={commit} focus={focus} signal={signal} />}
-                {view === 'moodle' && <MoodleView data={data} />}
+                {view === 'moodle' && <MoodleView data={data} robot={edtDistant?.moodle} />}
                 {view === 'mails' && <MailsView mails={mails} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy} />}
               </div>
             </main>
