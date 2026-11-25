@@ -3620,9 +3620,30 @@ function AppInner() {
     }
   };
 
+  // Relance discrète du robot quand les données datent de plus de 20 min (ouverture ou retour sur l'appli)
+  const autoLance = useRef(false);
+  const relancerSiAncien = async (edt) => {
+    if (!repo || !gistToken || !gistId || autoLance.current) return;
+    const age = edt?.majLe ? Date.now() - new Date(edt.majLe).getTime() : Infinity;
+    const dernier = Number(LS.get('etudes_auto_lance', '0')) || 0;
+    if (age < 20 * 60000 || Date.now() - dernier < 10 * 60000) return;
+    autoLance.current = true;
+    LS.set('etudes_auto_lance', String(Date.now()));
+    const avant = edt?.majLe || '';
+    try {
+      await gistApi.lancerEdt(gistToken, repo);
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 15000));
+        const { edt: frais } = await gistApi.readAll(gistToken, gistId);
+        if (frais?.majLe && frais.majLe !== avant) { setEdtDistant(frais); break; }
+      }
+    } catch { /* l'actualisation manuelle reste disponible */ }
+    finally { autoLance.current = false; }
+  };
+
   useEffect(() => {
-    if (isGistConnected) chargerGist();
-    const onVisible = () => { if (document.visibilityState === 'visible' && isGistConnected && chargeRef.current) chargerGist(); };
+    if (isGistConnected) chargerGist().then(relancerSiAncien);
+    const onVisible = () => { if (document.visibilityState === 'visible' && isGistConnected && chargeRef.current) chargerGist().then(relancerSiAncien); };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
