@@ -150,6 +150,7 @@ const gist = await gh(`/gists/${gistId}`);
 let anciens = [];
 let anciensMails = [];
 let envoyes = [];
+let ancienneSignature = '';
 const fichier = gist.files && gist.files[FICHIER_EDT];
 if (fichier) {
   try {
@@ -158,6 +159,7 @@ if (fichier) {
     anciens = (contenu.cours || []).filter(c => c.debut < debutPlage.toISOString() && c.debut >= limite);
     anciensMails = contenu.mails || [];
     envoyes = Array.isArray(contenu.envoyes) ? contenu.envoyes : [];
+    ancienneSignature = typeof contenu.signature === 'string' ? contenu.signature : '';
   } catch { anciens = []; }
 }
 
@@ -262,6 +264,37 @@ if (MAILS_ACTIFS) {
 }
 
 
+// ---------- Signature du webmail (celle des réponses, sinon celle par défaut) ----------
+let signature = '';
+if (authToken) {
+  try {
+    const attrsDe = (o) => {
+      if (!o) return {};
+      if (o._attrs) return o._attrs;
+      return Object.fromEntries((o.a || []).map(a => [a.n || a.name, a._content]));
+    };
+    const [rid, rsig] = await Promise.all([
+      soap({ GetIdentitiesRequest: { _jsns: 'urn:zimbraAccount' } }, authToken),
+      soap({ GetSignaturesRequest: { _jsns: 'urn:zimbraAccount' } }, authToken),
+    ]);
+    const identites = (rid.GetIdentitiesResponse && rid.GetIdentitiesResponse.identity) || [];
+    const attrs = attrsDe(identites.find(i => i.name === 'DEFAULT') || identites[0]);
+    const liste = (rsig.GetSignaturesResponse && rsig.GetSignaturesResponse.signature) || [];
+    const choisie = liste.find(x => x.id === attrs.zimbraPrefForwardReplySignatureId)
+      || liste.find(x => x.id === attrs.zimbraPrefDefaultSignatureId)
+      || liste[0];
+    if (choisie) {
+      const contenus = Array.isArray(choisie.content) ? choisie.content : (choisie.content ? [choisie.content] : []);
+      const txt = contenus.find(x => /text\/plain/i.test(x.type || ''));
+      const html = contenus.find(x => /text\/html/i.test(x.type || ''));
+      signature = (txt && txt._content ? txt._content : stripHtml(html ? html._content : '')).replace(/\r\n?/g, '\n')
+        .split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+  } catch (e) {
+    console.log(`::warning::Signature non récupérée (${e.message}).`);
+  }
+}
+
 // ---------- Actions demandées depuis l'application ----------
 // Réponses de la boîte d'envoi (3 essais au plus), puis mails lus marqués comme lus sur le webmail.
 if (authToken) {
@@ -271,7 +304,10 @@ if (authToken) {
     const deja = envoyes.find(x => x.id === r.id);
     if (deja && (deja.ok || (deja.tentatives || 0) >= 3)) continue;
     if (!r || !r.id || !r.a || !String(r.corps || '').trim()) continue;
-    const m = { e: [{ t: 't', a: String(r.a) }], su: { _content: String(r.objet || '') }, mp: [{ ct: 'text/plain', content: { _content: String(r.corps) } }] };
+    const texteFinal = r.citation !== undefined
+      ? `${String(r.corps).trim()}${signature ? `\n\n${signature}` : ''}${String(r.citation || '')}`
+      : String(r.corps);
+    const m = { e: [{ t: 't', a: String(r.a) }], su: { _content: String(r.objet || '') }, mp: [{ ct: 'text/plain', content: { _content: texteFinal } }] };
     if (r.mailId) { m.origid = String(r.mailId); m.rt = 'r'; }
     try {
       await soap({ SendMsgRequest: { _jsns: 'urn:zimbraMail', m } }, authToken);
@@ -309,6 +345,7 @@ const edt = {
   cours: tous,
   mails: mails || anciensMails,
   envoyes,
+  signature: authToken ? signature : ancienneSignature,
 };
 
 await gh(`/gists/${gistId}`, {
