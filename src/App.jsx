@@ -3009,7 +3009,7 @@ const citer = (mail) => {
   return `\n\nLe ${quand}, ${mail.de || mail.adresse} a écrit :\n${texte.split('\n').map(l => `> ${l}`).join('\n')}`;
 };
 
-const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, envoyes, onRepondre, onAnnulerEnvoi }) => {
+const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, envoyes, signature, onRepondre, onAnnulerEnvoi }) => {
   const mails = brut || [];
   const [ouvert, setOuvert] = useState(null);
   const [q, setQ] = useState('');
@@ -3034,7 +3034,7 @@ const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, en
   const repondre = () => setRep({ objet: /^re\s*:/i.test(mail.sujet || '') ? mail.sujet : `Re: ${mail.sujet || ''}`.trim(), corps: '' });
   const envoyer = () => {
     if (!rep.corps.trim()) return;
-    onRepondre({ id: uid('rep'), mailId: mail.id, a: mail.repondreA || mail.adresse, objet: rep.objet.trim(), corps: rep.corps.trim() + citer(mail), creeLe: new Date().toISOString() });
+    onRepondre({ id: uid('rep'), mailId: mail.id, a: mail.repondreA || mail.adresse, objet: rep.objet.trim(), corps: rep.corps.trim(), citation: citer(mail), creeLe: new Date().toISOString() });
     setRep(null);
   };
   const etatRep = (m) => {
@@ -3126,6 +3126,7 @@ const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, en
                 <Field label="Objet"><Input value={rep.objet} onChange={(e) => setRep(p => ({ ...p, objet: e.target.value }))} /></Field>
                 <textarea className="f-field" rows={7} autoFocus value={rep.corps} placeholder="Votre réponse"
                   onChange={(e) => setRep(p => ({ ...p, corps: e.target.value }))} />
+                {signature && <div className="ml-sig">{signature}</div>}
               </div>
             )}
             {(mail.corps || mail.extrait)
@@ -3627,6 +3628,7 @@ textarea.f-field { height: auto; padding: 8px 10px; line-height: 1.5; resize: ve
 .ml-suivi { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 6px 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-3); font-size: 13px; }
 .ml-suivi.echec { color: var(--neg); }
 .ml-compose textarea { min-height: 150px; }
+.ml-sig { padding: 2px 2px 0; color: var(--muted); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
 
 /* Podcasts */
 .pd-audio { width: 100%; }
@@ -4299,7 +4301,7 @@ function AppInner() {
                 )}
                 {view === 'mails' && (
                   <MailsView mails={mails} data={data} commit={commit} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy}
-                    envoyes={edtDistant?.envoyes} onRepondre={repondreMail} onAnnulerEnvoi={annulerEnvoi} />
+                    envoyes={edtDistant?.envoyes} signature={edtDistant?.signature} onRepondre={repondreMail} onAnnulerEnvoi={annulerEnvoi} />
                 )}
               </div>
             </main>
