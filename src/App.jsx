@@ -3002,6 +3002,29 @@ const avecLiens = (texte) => {
   return out;
 };
 
+// Signature HTML du webmail affichée telle quelle, sans script ni gestionnaire d'évènement
+const BALISES_SIG = new Set(['DIV', 'P', 'BR', 'SPAN', 'B', 'STRONG', 'I', 'EM', 'U', 'A', 'IMG', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TD', 'TH', 'FONT', 'HR', 'UL', 'OL', 'LI', 'SMALL', 'SUB', 'SUP', 'CENTER']);
+const ATTRS_SIG = new Set(['href', 'src', 'alt', 'title', 'width', 'height', 'style', 'color', 'size', 'face', 'align', 'valign', 'colspan', 'rowspan', 'border', 'cellpadding', 'cellspacing']);
+const signatureSure = (html) => {
+  try {
+    const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+    const racine = doc.body.firstChild;
+    const nettoyer = (el) => {
+      [...el.children].forEach(c => {
+        if (!BALISES_SIG.has(c.tagName)) { c.remove(); return; }
+        [...c.attributes].forEach(a => {
+          const n = a.name.toLowerCase();
+          if (!ATTRS_SIG.has(n) || ((n === 'href' || n === 'src') && /^\s*javascript:/i.test(a.value))) c.removeAttribute(a.name);
+        });
+        if (c.tagName === 'A') { c.setAttribute('target', '_blank'); c.setAttribute('rel', 'noopener noreferrer'); }
+        nettoyer(c);
+      });
+    };
+    nettoyer(racine);
+    return racine.innerHTML;
+  } catch { return ''; }
+};
+
 const citer = (mail) => {
   const d = new Date(mail.date);
   const quand = isNaN(d) ? '' : d.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
@@ -3009,7 +3032,8 @@ const citer = (mail) => {
   return `\n\nLe ${quand}, ${mail.de || mail.adresse} a écrit :\n${texte.split('\n').map(l => `> ${l}`).join('\n')}`;
 };
 
-const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, envoyes, signature, onRepondre, onAnnulerEnvoi }) => {
+const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, envoyes, signature, signatureHtml, onRepondre, onAnnulerEnvoi }) => {
+  const sigHtml = useMemo(() => (signatureHtml ? signatureSure(signatureHtml) : ''), [signatureHtml]);
   const mails = brut || [];
   const [ouvert, setOuvert] = useState(null);
   const [q, setQ] = useState('');
@@ -3126,7 +3150,8 @@ const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, en
                 <Field label="Objet"><Input value={rep.objet} onChange={(e) => setRep(p => ({ ...p, objet: e.target.value }))} /></Field>
                 <textarea className="f-field" rows={7} autoFocus value={rep.corps} placeholder="Votre réponse"
                   onChange={(e) => setRep(p => ({ ...p, corps: e.target.value }))} />
-                {signature && <div className="ml-sig">{signature}</div>}
+                {sigHtml ? <div className="ml-sig ml-sig-html" dangerouslySetInnerHTML={{ __html: sigHtml }} />
+                  : signature && <div className="ml-sig">{signature}</div>}
               </div>
             )}
             {(mail.corps || mail.extrait)
@@ -3629,6 +3654,10 @@ textarea.f-field { height: auto; padding: 8px 10px; line-height: 1.5; resize: ve
 .ml-suivi.echec { color: var(--neg); }
 .ml-compose textarea { min-height: 150px; }
 .ml-sig { padding: 2px 2px 0; color: var(--muted); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.ml-sig-html { white-space: normal; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #1c1917; overflow-x: auto; }
+.ml-sig-html img { max-width: 100%; height: auto; display: inline-block; vertical-align: middle; }
+.ml-sig-html a { color: inherit; }
+.ml-sig-html table { border-collapse: collapse; }
 
 /* Podcasts */
 .pd-audio { width: 100%; }
@@ -4301,7 +4330,7 @@ function AppInner() {
                 )}
                 {view === 'mails' && (
                   <MailsView mails={mails} data={data} commit={commit} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy}
-                    envoyes={edtDistant?.envoyes} signature={edtDistant?.signature} onRepondre={repondreMail} onAnnulerEnvoi={annulerEnvoi} />
+                    envoyes={edtDistant?.envoyes} signature={edtDistant?.signature} signatureHtml={edtDistant?.signatureHtml} onRepondre={repondreMail} onAnnulerEnvoi={annulerEnvoi} />
                 )}
               </div>
             </main>
