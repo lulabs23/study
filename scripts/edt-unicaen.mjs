@@ -151,6 +151,7 @@ let anciens = [];
 let anciensMails = [];
 let envoyes = [];
 let ancienneSignature = '';
+let anciensQcmsIA = [];
 let ancienneSignatureHtml = '';
 const fichier = gist.files && gist.files[FICHIER_EDT];
 if (fichier) {
@@ -161,6 +162,7 @@ if (fichier) {
     anciensMails = contenu.mails || [];
     envoyes = Array.isArray(contenu.envoyes) ? contenu.envoyes : [];
     ancienneSignature = typeof contenu.signature === 'string' ? contenu.signature : '';
+    anciensQcmsIA = Array.isArray(contenu.qcmsIA) ? contenu.qcmsIA : [];
     ancienneSignatureHtml = typeof contenu.signatureHtml === 'string' ? contenu.signatureHtml : '';
   } catch { anciens = []; }
 }
@@ -382,6 +384,76 @@ if (authToken) {
   }
 }
 
+// ---------- QCM générés par IA (GitHub Models, jeton du workflow) ----------
+const MODELS_TOKEN = process.env.MODELS_TOKEN || '';
+const MODELES_QCM = (process.env.MODELE_QCM || 'openai/gpt-4.1-mini,openai/gpt-4o-mini').split(',').map(s => s.trim()).filter(Boolean);
+const CONSIGNE_QCM = `Tu prépares des QCM de révision pour un étudiant en gestion (comptabilité, contrôle de gestion, droit, économie, management).
+À partir UNIQUEMENT de la fiche fournie, rédige des questions à choix multiples en français.
+Règles :
+- chaque question porte sur une notion importante de la fiche, sans détail anecdotique ;
+- 4 propositions par question, une seule bonne réponse en général (plusieurs seulement si c'est indiscutable) ;
+- les mauvaises réponses sont crédibles : confusions entre notions proches, erreurs fréquentes, chiffres voisins ;
+- jamais « toutes les réponses » ni « aucune de ces réponses » ;
+- varie les questions : définition, distinction entre notions, application à un cas, calcul si la fiche contient des formules ;
+- explication de 1 à 2 phrases qui justifie la bonne réponse avec la fiche ;
+- thème court (2 à 4 mots).
+Réponds uniquement avec un objet JSON de la forme :
+{"titre": "…", "questions": [{"enonce": "…", "propositions": ["…", "…", "…", "…"], "reponses": [0], "explication": "…", "theme": "…"}]}
+Les indices de « reponses » commencent à 0.`;
+
+const genererQcm = async (d) => {
+  let derniere = null;
+  for (const modele of MODELES_QCM) {
+    try {
+      const r = await fetch('https://models.github.ai/inference/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${MODELS_TOKEN}` },
+        body: JSON.stringify({
+          model: modele,
+          temperature: 0.4,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: CONSIGNE_QCM },
+            { role: 'user', content: `Nombre de questions : ${Math.max(3, Math.min(15, Number(d.nb) || 10))}\nTitre : ${d.titre || ''}\nMatière : ${d.matiere || ''}\n\nFiche :\n${String(d.contenu || '').slice(0, 20000)}` },
+          ],
+        }),
+      });
+      const brut = await r.text();
+      if (!r.ok) throw new Error(`${modele} : HTTP ${r.status} ${brut.slice(0, 160)}`);
+      const texte = String(JSON.parse(brut).choices?.[0]?.message?.content || '');
+      const bloc = texte.match(/\{[\s\S]*\}/);
+      const obj = JSON.parse(bloc ? bloc[0] : texte);
+      const questions = (Array.isArray(obj.questions) ? obj.questions : [])
+        .filter(q => q && q.enonce && Array.isArray(q.propositions) && q.propositions.length >= 2)
+        .slice(0, 20);
+      if (!questions.length) throw new Error(`${modele} : aucune question exploitable`);
+      return { titre: String(obj.titre || '').trim() || `QCM · ${d.titre || 'fiche'}`, questions, modele };
+    } catch (e) {
+      derniere = e;
+      console.log(`::warning::QCM « ${d.titre} » (${e.message}).`);
+    }
+  }
+  throw derniere || new Error('Aucun modèle disponible');
+};
+
+let qcmsIA = anciensQcmsIA;
+{
+  const demandes = Array.isArray(donnees.demandesQcm) ? donnees.demandesQcm : [];
+  const aTraiter = demandes.filter(d => d && d.id && !qcmsIA.some(x => x.id === d.id)).slice(0, 3);
+  if (aTraiter.length && !MODELS_TOKEN) console.log('::warning::Génération de QCM impossible : jeton GitHub Models absent.');
+  for (const d of MODELS_TOKEN ? aTraiter : []) {
+    try {
+      const qcm = await genererQcm(d);
+      qcmsIA = [...qcmsIA, { id: d.id, ok: true, le: new Date().toISOString(), qcm }];
+      console.log(`QCM généré : « ${d.titre} » (${qcm.questions.length} questions, ${qcm.modele}).`);
+    } catch (e) {
+      qcmsIA = [...qcmsIA, { id: d.id, ok: false, le: new Date().toISOString(), erreur: e.message }];
+    }
+  }
+  const enCours = new Set(demandes.map(d => d && d.id));
+  qcmsIA = qcmsIA.filter((x, i) => enCours.has(x.id) || i >= qcmsIA.length - 5);
+}
+
 const tous = [...anciens, ...cours].sort((x, y) => x.debut.localeCompare(y.debut));
 const edt = {
   version: 1,
@@ -393,6 +465,7 @@ const edt = {
   envoyes,
   signature: authToken ? signature : ancienneSignature,
   signatureHtml: authToken ? signatureHtml : ancienneSignatureHtml,
+  qcmsIA,
 };
 
 await gh(`/gists/${gistId}`, {
