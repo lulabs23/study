@@ -177,13 +177,27 @@ const MAILS_ACTIFS = !/^(non|0|false)$/i.test(env.MAILS || '');
 const NB_MAILS = Math.min(60, Math.max(5, parseInt(env.MAILS_NB || '40', 10) || 40));
 const CORPS_MAX = 8000;
 
-const stripHtml = (html) => String(html || '')
+// Entités HTML courantes (accents français compris)
+const ENTITES = {
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  eacute: 'é', egrave: 'è', ecirc: 'ê', euml: 'ë', agrave: 'à', acirc: 'â', auml: 'ä', ccedil: 'ç',
+  icirc: 'î', iuml: 'ï', ocirc: 'ô', ouml: 'ö', ugrave: 'ù', ucirc: 'û', uuml: 'ü', yuml: 'ÿ',
+  Eacute: 'É', Egrave: 'È', Ecirc: 'Ê', Euml: 'Ë', Agrave: 'À', Acirc: 'Â', Ccedil: 'Ç',
+  Icirc: 'Î', Iuml: 'Ï', Ocirc: 'Ô', Ugrave: 'Ù', Ucirc: 'Û', Uuml: 'Ü',
+  oelig: 'œ', OElig: 'Œ', aelig: 'æ', AElig: 'Æ', laquo: '«', raquo: '»', rsquo: '’', lsquo: '‘',
+  ldquo: '“', rdquo: '”', hellip: '…', ndash: '–', mdash: '—', euro: '€', deg: '°', copy: '©',
+  reg: '®', trade: '™', middot: '·', bull: '•', times: '×', shy: '', zwnj: '', zwj: '',
+};
+const decoderEntites = (t) => String(t)
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
+  .replace(/&([a-z]+);/gi, (m, nom) => (ENTITES[nom] !== undefined ? ENTITES[nom] : (nom === 'amp' ? '&' : ' ')));
+
+const stripHtml = (html) => decoderEntites(String(html || '')
   .replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<script[\s\S]*?<\/script>/gi, ' ')
   .replace(/<\/(p|div|tr|li|h[1-6]|br)>/gi, '\n').replace(/<br\s*\/?>/gi, '\n')
-  .replace(/<[^>]+>/g, ' ')
-  .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-  .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n)).replace(/&[a-z]+;/gi, ' ')
-  .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
+  .replace(/<[^>]+>/g, ' '))
+  .replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
 
 // Parcourt les parties MIME et en extrait le texte (préférence au text/plain)
 const corpsDepuisParties = (parts, prof = 0) => {
