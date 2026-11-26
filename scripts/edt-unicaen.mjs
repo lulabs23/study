@@ -151,6 +151,7 @@ let anciens = [];
 let anciensMails = [];
 let envoyes = [];
 let ancienneSignature = '';
+let ancienneSignatureHtml = '';
 const fichier = gist.files && gist.files[FICHIER_EDT];
 if (fichier) {
   try {
@@ -160,6 +161,7 @@ if (fichier) {
     anciensMails = contenu.mails || [];
     envoyes = Array.isArray(contenu.envoyes) ? contenu.envoyes : [];
     ancienneSignature = typeof contenu.signature === 'string' ? contenu.signature : '';
+    ancienneSignatureHtml = typeof contenu.signatureHtml === 'string' ? contenu.signatureHtml : '';
   } catch { anciens = []; }
 }
 
@@ -280,6 +282,20 @@ if (MAILS_ACTIFS) {
 
 // ---------- Signature du webmail (celle des réponses, sinon celle par défaut) ----------
 let signature = '';
+let signatureHtml = '';
+// Nettoyage minimal du HTML de la signature (aucun script ni gestionnaire d'évènement)
+const htmlSur = (h) => String(h || '')
+  .replace(/<(script|style|iframe|object|embed|form)[\s\S]*?<\/\1>/gi, '')
+  .replace(/<(script|iframe|object|embed|form|meta|link)\b[^>]*>/gi, '')
+  .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+  .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1="#"')
+  .trim();
+// Texte d'une signature HTML : les liens gardent leur adresse (« LinkedIn (https://…) »)
+const texteDeSignature = (h) => stripHtml(String(h || '').replace(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, dedans) => {
+  const t = stripHtml(dedans);
+  if (/^mailto:/i.test(href)) return t || href.slice(7);
+  return t && t !== href ? `${t} (${href})` : href;
+}));
 if (authToken) {
   try {
     const attrsDe = (o) => {
@@ -301,7 +317,8 @@ if (authToken) {
       const contenus = Array.isArray(choisie.content) ? choisie.content : (choisie.content ? [choisie.content] : []);
       const txt = contenus.find(x => /text\/plain/i.test(x.type || ''));
       const html = contenus.find(x => /text\/html/i.test(x.type || ''));
-      signature = (txt && txt._content ? txt._content : stripHtml(html ? html._content : '')).replace(/\r\n?/g, '\n')
+      signatureHtml = html && html._content ? htmlSur(html._content) : '';
+      signature = (signatureHtml ? texteDeSignature(signatureHtml) : (txt && txt._content) || '').replace(/\r\n?/g, '\n')
         .split('\n').map(l => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
     }
   } catch (e) {
@@ -321,7 +338,21 @@ if (authToken) {
     const texteFinal = r.citation !== undefined
       ? `${String(r.corps).trim()}${signature ? `\n\n${signature}` : ''}${String(r.citation || '')}`
       : String(r.corps);
-    const m = { e: [{ t: 't', a: String(r.a) }], su: { _content: String(r.objet || '') }, mp: [{ ct: 'text/plain', content: { _content: texteFinal } }] };
+    let mp = [{ ct: 'text/plain', content: { _content: texteFinal } }];
+    if (r.citation !== undefined && signatureHtml) {
+      const echapper = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const enHtml = (t) => echapper(t).replace(/\n/g, '<br>');
+      const lignes = String(r.citation || '').trim().split('\n');
+      const entete = lignes.filter(l => !/^>/.test(l)).join('\n').trim();
+      const cite = lignes.filter(l => /^>/.test(l)).map(l => l.replace(/^> ?/, '')).join('\n');
+      const html = `<div style="font-family: arial, helvetica, sans-serif; font-size: 12pt; color: #000000">`
+        + `<div>${enHtml(String(r.corps).trim())}</div><br>`
+        + `<div>${signatureHtml}</div>`
+        + (entete || cite ? `<br><hr><div>${enHtml(entete)}</div><blockquote style="border-left: 2px solid #1010FF; margin-left: 5px; padding-left: 5px; color: #000;">${enHtml(cite)}</blockquote>` : '')
+        + `</div>`;
+      mp = [{ ct: 'multipart/alternative', mp: [{ ct: 'text/plain', content: { _content: texteFinal } }, { ct: 'text/html', content: { _content: html } }] }];
+    }
+    const m = { e: [{ t: 't', a: String(r.a) }], su: { _content: String(r.objet || '') }, mp };
     if (r.mailId) { m.origid = String(r.mailId); m.rt = 'r'; }
     try {
       await soap({ SendMsgRequest: { _jsns: 'urn:zimbraMail', m } }, authToken);
@@ -360,6 +391,7 @@ const edt = {
   mails: mails || anciensMails,
   envoyes,
   signature: authToken ? signature : ancienneSignature,
+  signatureHtml: authToken ? signatureHtml : ancienneSignatureHtml,
 };
 
 await gh(`/gists/${gistId}`, {
