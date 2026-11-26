@@ -384,9 +384,8 @@ if (authToken) {
   }
 }
 
-// ---------- QCM générés par IA (GitHub Models, jeton du workflow) ----------
-const MODELS_TOKEN = process.env.MODELS_TOKEN || '';
-const MODELES_QCM = (process.env.MODELE_QCM || 'openai/gpt-4.1-mini,openai/gpt-4o-mini').split(',').map(s => s.trim()).filter(Boolean);
+// ---------- QCM générés par IA (Gemini, clé gratuite de Google AI Studio) ----------
+const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 const CONSIGNE_QCM = `Tu prépares des QCM de révision pour un étudiant en gestion (comptabilité, contrôle de gestion, droit, économie, management).
 À partir UNIQUEMENT de la fiche fournie, rédige des questions à choix multiples en français.
 Règles :
@@ -401,26 +400,50 @@ Réponds uniquement avec un objet JSON de la forme :
 {"titre": "…", "questions": [{"enonce": "…", "propositions": ["…", "…", "…", "…"], "reponses": [0], "explication": "…", "theme": "…"}]}
 Les indices de « reponses » commencent à 0.`;
 
-const genererQcm = async (d) => {
+// Modèles « Flash » disponibles pour la clé, du plus récent au plus ancien
+const modelesGemini = async () => {
+  if (process.env.MODELE_QCM) return process.env.MODELE_QCM.split(',').map(x => x.trim()).filter(Boolean);
+  let noms = [];
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': GEMINI_KEY } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+    noms = (j.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => String(m.name || '').replace(/^models\//, ''));
+  } catch (e) {
+    console.log(`::warning::Liste des modèles Gemini indisponible (${e.message}).`);
+  }
+  const version = (n) => (n.match(/gemini-([\d.]+)/) || [, '0'])[1].split('.').map(Number);
+  const plusRecent = (a, b) => { const x = version(a); const y = version(b); for (let i = 0; i < 3; i++) { if ((y[i] || 0) !== (x[i] || 0)) return (y[i] || 0) - (x[i] || 0); } return 0; };
+  const flash = noms.filter(n => /^gemini-[\d.]+-flash$/.test(n)).sort(plusRecent);
+  const lite = noms.filter(n => /^gemini-[\d.]+-flash-lite$/.test(n)).sort(plusRecent);
+  const alias = ['gemini-flash-latest', 'gemini-flash-lite-latest'].filter(n => !noms.length || noms.includes(n));
+  return [...flash.slice(0, 2), ...alias, ...lite.slice(0, 1)].filter((n, i, t) => t.indexOf(n) === i);
+};
+
+const genererQcm = async (d, modeles) => {
   let derniere = null;
-  for (const modele of MODELES_QCM) {
+  for (const modele of modeles) {
     try {
-      const r = await fetch('https://models.github.ai/inference/chat/completions', {
+      const consigne = `Nombre de questions : ${Math.max(3, Math.min(15, Number(d.nb) || 10))}\nTitre : ${d.titre || ''}\nMatière : ${d.matiere || ''}\n\nFiche :\n${String(d.contenu || '').slice(0, 20000)}`;
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modele)}:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${MODELS_TOKEN}` },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
         body: JSON.stringify({
-          model: modele,
-          temperature: 0.4,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: CONSIGNE_QCM },
-            { role: 'user', content: `Nombre de questions : ${Math.max(3, Math.min(15, Number(d.nb) || 10))}\nTitre : ${d.titre || ''}\nMatière : ${d.matiere || ''}\n\nFiche :\n${String(d.contenu || '').slice(0, 20000)}` },
-          ],
+          systemInstruction: { parts: [{ text: CONSIGNE_QCM }] },
+          contents: [{ role: 'user', parts: [{ text: consigne }] }],
+          generationConfig: { temperature: 0.4, responseMimeType: 'application/json' },
         }),
       });
       const brut = await r.text();
-      if (!r.ok) throw new Error(`${modele} : HTTP ${r.status} ${brut.slice(0, 160)}`);
-      const texte = String(JSON.parse(brut).choices?.[0]?.message?.content || '');
+      if (!r.ok) {
+        let msg = brut.slice(0, 160);
+        try { msg = JSON.parse(brut).error?.message || msg; } catch { /* texte brut */ }
+        throw new Error(`${modele} : ${msg}`);
+      }
+      const rep = JSON.parse(brut);
+      const texte = (rep.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
       const bloc = texte.match(/\{[\s\S]*\}/);
       const obj = JSON.parse(bloc ? bloc[0] : texte);
       const questions = (Array.isArray(obj.questions) ? obj.questions : [])
@@ -433,17 +456,21 @@ const genererQcm = async (d) => {
       console.log(`::warning::QCM « ${d.titre} » (${e.message}).`);
     }
   }
-  throw derniere || new Error('Aucun modèle disponible');
+  throw derniere || new Error('aucun modèle Gemini disponible');
 };
 
 let qcmsIA = anciensQcmsIA;
 {
   const demandes = Array.isArray(donnees.demandesQcm) ? donnees.demandesQcm : [];
   const aTraiter = demandes.filter(d => d && d.id && !qcmsIA.some(x => x.id === d.id)).slice(0, 3);
-  if (aTraiter.length && !MODELS_TOKEN) console.log('::warning::Génération de QCM impossible : jeton GitHub Models absent.');
-  for (const d of MODELS_TOKEN ? aTraiter : []) {
+  const modeles = aTraiter.length && GEMINI_KEY ? await modelesGemini() : [];
+  for (const d of aTraiter) {
+    if (!GEMINI_KEY) {
+      qcmsIA = [...qcmsIA, { id: d.id, ok: false, le: new Date().toISOString(), erreur: 'clé Gemini absente des secrets du dépôt (GEMINI_API_KEY)' }];
+      continue;
+    }
     try {
-      const qcm = await genererQcm(d);
+      const qcm = await genererQcm(d, modeles);
       qcmsIA = [...qcmsIA, { id: d.id, ok: true, le: new Date().toISOString(), qcm }];
       console.log(`QCM généré : « ${d.titre} » (${qcm.questions.length} questions, ${qcm.modele}).`);
     } catch (e) {
