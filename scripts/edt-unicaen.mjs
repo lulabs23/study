@@ -6,6 +6,8 @@
 //   UNICAEN_PASSWORD  mot de passe de l'ENT
 //   GIST_TOKEN        token GitHub avec accès aux Gists (le même que dans l'application)
 //   GIST_ID           facultatif : identifiant du Gist (sinon recherché automatiquement)
+// Envoie aussi les réponses déposées dans la boîte d'envoi de l'application
+// et marque comme lus sur le webmail les mails ouverts dans l'application.
 // Rien n'est écrit dans le journal à part des compteurs.
 
 const env = process.env;
@@ -118,6 +120,54 @@ for (const a of corps.appt || []) {
   }
 }
 
+// ---------- Gist ----------
+const gh = async (chemin, options = {}) => {
+  const res = await fetch(`https://api.github.com${chemin}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+  });
+  if (!res.ok) echec(`GitHub : ${options.method || 'GET'} ${chemin.split('?')[0].replace(/[0-9a-f]{20,}/, '…')} → ${res.status}.`);
+  return res.json();
+};
+
+if (!gistId) {
+  for (let page = 1; page <= 5 && !gistId; page++) {
+    const liste = await gh(`/gists?per_page=100&page=${page}`);
+    const trouve = liste.find(g => g.files && g.files[FICHIER_DONNEES]);
+    if (trouve) gistId = trouve.id;
+    if (liste.length < 100) break;
+  }
+  if (!gistId) echec(`Aucun Gist contenant ${FICHIER_DONNEES} : connecter d'abord l'application à GitHub.`);
+}
+
+// Les cours passés, hors de la plage téléchargée, sont conservés pour l'historique
+const gist = await gh(`/gists/${gistId}`);
+let anciens = [];
+let anciensMails = [];
+let envoyes = [];
+const fichier = gist.files && gist.files[FICHIER_EDT];
+if (fichier) {
+  try {
+    const contenu = JSON.parse(fichier.truncated ? await (await fetch(fichier.raw_url)).text() : fichier.content);
+    const limite = ajouterJours(maintenant, -JOURS_CONSERVES).toISOString();
+    anciens = (contenu.cours || []).filter(c => c.debut < debutPlage.toISOString() && c.debut >= limite);
+    anciensMails = contenu.mails || [];
+    envoyes = Array.isArray(contenu.envoyes) ? contenu.envoyes : [];
+  } catch { anciens = []; }
+}
+
+// Données de l'application : mails lus et réponses à envoyer
+let donnees = {};
+const fichierDonnees = gist.files && gist.files[FICHIER_DONNEES];
+if (fichierDonnees) {
+  try { donnees = JSON.parse(fichierDonnees.truncated ? await (await fetch(fichierDonnees.raw_url)).text() : fichierDonnees.content) || {}; } catch { donnees = {}; }
+}
+
 // ---------- Mails (boîte de réception, corps complet) ----------
 // Via l'API SOAP de Zimbra, en JSON. Le corps est ramené en texte et plafonné.
 // Repli sur l'aperçu (REST) si le SOAP échoue. Expéditeur, objet, date, corps.
@@ -163,15 +213,17 @@ const soap = async (requete, authToken) => {
 };
 
 let mails = null;
+let authToken = null;
 if (MAILS_ACTIFS) {
   try {
     const auth = await soap({ AuthRequest: { _jsns: 'urn:zimbraAccount', account: { by: 'name', _content: compte }, password: { _content: MOT_DE_PASSE } } });
-    const authToken = auth.AuthResponse.authToken[0]._content;
+    authToken = auth.AuthResponse.authToken[0]._content;
     const rep = await soap({
       SearchRequest: { _jsns: 'urn:zimbraMail', types: 'message', fetch: 'all', html: 0, needExp: 0, limit: NB_MAILS, query: { _content: 'in:inbox' } },
     }, authToken);
     mails = (rep.SearchResponse.m || []).map(m => {
       const exp = (m.e || []).find(x => x.t === 'f') || {};
+      const repA = (m.e || []).find(x => x.t === 'r') || {};
       const { plain, html } = corpsDepuisParties(m.mp);
       const corps = (plain.trim() ? plain : stripHtml(html)).replace(/\n{3,}/g, '\n\n').trim().slice(0, CORPS_MAX);
       return {
@@ -184,6 +236,8 @@ if (MAILS_ACTIFS) {
         corps,
         nonLu: /u/.test(m.f || ''),
         pj: /a/.test(m.f || ''),
+        repondu: /r/.test(m.f || ''),
+        repondreA: repA.a || exp.a || '',
       };
     }).sort((a, b) => b.date.localeCompare(a.date)).slice(0, NB_MAILS);
   } catch (eSoap) {
@@ -207,82 +261,43 @@ if (MAILS_ACTIFS) {
   }
 }
 
-// ---------- Moodle (jeton de service, facultatif) ----------
-// Si le secret MOODLE_TOKEN est présent : cours et notes par l'API REST, sans la grille.
-const MOODLE_TOKEN = (env.MOODLE_TOKEN || '').trim();
-const MOODLE_URL = (env.MOODLE_URL || 'https://ecampus-vert.unicaen.fr').replace(/\/+$/, '');
-let moodle = null;
-if (MOODLE_TOKEN) {
-  const moodleRest = async (fn, params = {}) => {
-    const body = new URLSearchParams({ wstoken: MOODLE_TOKEN, wsfunction: fn, moodlewsrestformat: 'json', ...params });
-    const r = await fetch(`${MOODLE_URL}/webservice/rest/server.php`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Etudes (GitHub Actions)' }, body });
-    const j = await r.json();
-    if (j && j.exception) throw new Error(j.errorcode || j.message || fn);
-    return j;
-  };
-  try {
-    const info = await moodleRest('core_webservice_get_site_info');
-    const userid = info.userid;
-    const fns = new Set((info.functions || []).map(f => f.name));
-    let coursListe = [];
-    if (fns.has('core_enrol_get_users_courses')) coursListe = await moodleRest('core_enrol_get_users_courses', { userid });
-    let notes = [];
-    if (fns.has('gradereport_overview_get_course_grades')) {
-      const g = await moodleRest('gradereport_overview_get_course_grades');
-      notes = (g.grades || []).map(x => ({ coursId: x.courseid, note: x.grade, brut: x.rawgrade }));
+
+// ---------- Actions demandées depuis l'application ----------
+// Réponses de la boîte d'envoi (3 essais au plus), puis mails lus marqués comme lus sur le webmail.
+if (authToken) {
+  const boite = Array.isArray(donnees.boiteEnvoi) ? donnees.boiteEnvoi : [];
+  let nbEnvois = 0;
+  for (const r of boite) {
+    const deja = envoyes.find(x => x.id === r.id);
+    if (deja && (deja.ok || (deja.tentatives || 0) >= 3)) continue;
+    if (!r || !r.id || !r.a || !String(r.corps || '').trim()) continue;
+    const m = { e: [{ t: 't', a: String(r.a) }], su: { _content: String(r.objet || '') }, mp: [{ ct: 'text/plain', content: { _content: String(r.corps) } }] };
+    if (r.mailId) { m.origid = String(r.mailId); m.rt = 'r'; }
+    try {
+      await soap({ SendMsgRequest: { _jsns: 'urn:zimbraMail', m } }, authToken);
+      envoyes = [...envoyes.filter(x => x.id !== r.id), { id: r.id, mailId: r.mailId || null, ok: true, le: new Date().toISOString() }];
+      nbEnvois++;
+      if (mails) mails.forEach(x => { if (x.id === String(r.mailId)) x.repondu = true; });
+    } catch (e) {
+      envoyes = [...envoyes.filter(x => x.id !== r.id), { id: r.id, mailId: r.mailId || null, ok: false, erreur: e.message, tentatives: ((deja && deja.tentatives) || 0) + 1, le: new Date().toISOString() }];
+      console.log(`::warning::Réponse non envoyée (${e.message}).`);
     }
-    const notesParCours = Object.fromEntries(notes.map(n => [n.coursId, n]));
-    moodle = {
-      majLe: maintenant.toISOString(),
-      source: 'jeton',
-      cours: (coursListe || []).map(c => ({ id: c.id, nom: c.fullname, court: c.shortname, progression: typeof c.progress === 'number' ? c.progress : null,
-        note: notesParCours[c.id] ? notesParCours[c.id].note : null })),
-    };
-    console.log(`Moodle : ${moodle.cours.length} cours, ${notes.filter(n => n.note && n.note !== '-').length} notes.`);
-  } catch (e) {
-    console.log(`::warning::Moodle non récupéré (${e.message}).`);
   }
-}
+  const enBoite = new Set(boite.map(x => x && x.id));
+  envoyes = envoyes.filter((x, i) => enBoite.has(x.id) || i >= envoyes.length - 50);
+  if (nbEnvois) console.log(`${nbEnvois} réponse(s) envoyée(s).`);
 
-// ---------- Gist ----------// ---------- Gist ----------
-const gh = async (chemin, options = {}) => {
-  const res = await fetch(`https://api.github.com${chemin}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-  });
-  if (!res.ok) echec(`GitHub : ${options.method || 'GET'} ${chemin.split('?')[0].replace(/[0-9a-f]{20,}/, '…')} → ${res.status}.`);
-  return res.json();
-};
-
-if (!gistId) {
-  for (let page = 1; page <= 5 && !gistId; page++) {
-    const liste = await gh(`/gists?per_page=100&page=${page}`);
-    const trouve = liste.find(g => g.files && g.files[FICHIER_DONNEES]);
-    if (trouve) gistId = trouve.id;
-    if (liste.length < 100) break;
+  const lus = new Set((Array.isArray(donnees.mailsLus) ? donnees.mailsLus : []).map(String));
+  const aMarquer = (mails || []).filter(x => x.nonLu && lus.has(x.id)).map(x => x.id);
+  if (aMarquer.length) {
+    try {
+      await soap({ MsgActionRequest: { _jsns: 'urn:zimbraMail', action: { op: 'read', id: aMarquer.join(',') } } }, authToken);
+      mails.forEach(x => { if (lus.has(x.id)) x.nonLu = false; });
+      console.log(`${aMarquer.length} mail(s) marqué(s) comme lu(s).`);
+    } catch (e) {
+      console.log(`::warning::Mails non marqués comme lus (${e.message}).`);
+    }
   }
-  if (!gistId) echec(`Aucun Gist contenant ${FICHIER_DONNEES} : connecter d'abord l'application à GitHub.`);
-}
-
-// Les cours passés, hors de la plage téléchargée, sont conservés pour l'historique
-const gist = await gh(`/gists/${gistId}`);
-let anciens = [];
-let anciensMails = [];
-let anciensMoodle = null;
-const fichier = gist.files && gist.files[FICHIER_EDT];
-if (fichier) {
-  try {
-    const contenu = JSON.parse(fichier.truncated ? await (await fetch(fichier.raw_url)).text() : fichier.content);
-    const limite = ajouterJours(maintenant, -JOURS_CONSERVES).toISOString();
-    anciens = (contenu.cours || []).filter(c => c.debut < debutPlage.toISOString() && c.debut >= limite);
-    anciensMails = contenu.mails || [];
-    anciensMoodle = contenu.moodle || null;
-  } catch { anciens = []; }
 }
 
 const tous = [...anciens, ...cours].sort((x, y) => x.debut.localeCompare(y.debut));
@@ -293,7 +308,7 @@ const edt = {
   plage: { debut: debutPlage.toISOString(), fin: finPlage.toISOString() },
   cours: tous,
   mails: mails || anciensMails,
-  moodle: moodle || anciensMoodle,
+  envoyes,
 };
 
 await gh(`/gists/${gistId}`, {
