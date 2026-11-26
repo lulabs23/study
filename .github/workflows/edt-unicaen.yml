@@ -2,7 +2,7 @@ name: EDT Unicaen
 
 # Récupère l'emploi du temps et les derniers mails Unicaen et les écrit dans le Gist de l'application.
 # Envoie aussi les réponses rédigées dans l'application, marque comme lus les mails ouverts
-# et génère les QCM demandés depuis une fiche (GitHub Models, sans clé supplémentaire).
+# et génère les QCM demandés depuis une fiche (Gemini : secret GEMINI_API_KEY, clé gratuite de Google AI Studio).
 # Secrets requis (Settings → Secrets and variables → Actions) :
 #   UNICAEN_USER, UNICAEN_PASSWORD, GIST_TOKEN — et GIST_ID (facultatif)
 # Lancé toutes les 30 minutes par cron-job.org (workflow_dispatch) ; le cron ci-dessous sert de secours.
@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  models: read
 
 # Une exécution à la fois, sans interrompre celle en cours (une réponse ne doit pas partir deux fois)
 concurrency:
@@ -44,4 +43,4 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
           MAILS: ${{ vars.MAILS }}
-          MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
