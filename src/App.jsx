@@ -3693,6 +3693,9 @@ textarea.f-field { height: auto; padding: 8px 10px; line-height: 1.5; resize: ve
 
 /* Podcasts */
 .pd-audio { width: 100%; }
+.q-attente { pointer-events: none; }
+.q-attente .q-play { opacity: .6; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
 @media (max-width: 520px) { .res-seg .ct { display: none; } .res-seg > button { padding: 0 4px; gap: 5px; } }
 .pd-ecoute .l-lib .t-ink { color: var(--ink-3); }
 
@@ -4232,7 +4235,7 @@ function AppInner() {
       const qs = r.ok && r.qcm && Array.isArray(r.qcm.questions) ? r.qcm.questions.map(normaliserQuestion).filter(q => q.enonce && q.propositions.length >= 2 && q.reponses.length) : [];
       if (qs.length) {
         nouveaux.push({ id: `qcm_${dm.id}`, titre: (r.qcm.titre || `QCM · ${dm.titre}`).trim(), matiere: dm.matiere || '', questions: qs, tentatives: [], stats: {}, ia: true, creeLe: maintenant, modifieLe: maintenant });
-      } else erreurs.push(dm.titre);
+      } else erreurs.push(r.erreur ? String(r.erreur).replace(/^[\w.-]+ : /, '').slice(0, 120) : dm.titre);
     });
     commit(d => ({
       ...d,
@@ -4240,7 +4243,7 @@ function AppInner() {
       demandesQcm: (d.demandesQcm || []).filter(dm => !finies.some(f => f.id === dm.id)),
     }));
     if (nouveaux.length) montrer(nouveaux.length > 1 ? `${nouveaux.length} QCM prêts` : `QCM prêt : ${nouveaux[0].titre}`);
-    else if (erreurs.length) montrer('Le QCM n’a pas pu être généré');
+    else if (erreurs.length) montrer(`QCM non généré : ${erreurs[0]}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edtDistant, data.demandesQcm]);
   const annulerEnvoi = (id) => commit(d => ({ ...d, boiteEnvoi: (d.boiteEnvoi || []).filter(x => x.id !== id) }));
