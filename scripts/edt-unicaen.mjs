@@ -293,7 +293,8 @@ const htmlSur = (h) => String(h || '')
 // Texte d'une signature HTML : les liens gardent leur adresse (« LinkedIn (https://…) »)
 const texteDeSignature = (h) => stripHtml(String(h || '').replace(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, dedans) => {
   const t = stripHtml(dedans);
-  if (/^mailto:/i.test(href)) return t || href.slice(7);
+  if (/^(mailto|tel):/i.test(href)) return t || href.replace(/^\w+:/, '');
+  if (!t && /^https?:\/\/(www\.)?mysignature\.io\b/i.test(href)) return '';
   return t && t !== href ? `${t} (${href})` : href;
 }));
 if (authToken) {
