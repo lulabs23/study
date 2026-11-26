@@ -58,6 +58,7 @@ const Send = mk(<><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0
 const CheckCheck = mk(<><path d="M18 6 7 17l-5-5" /><path d="m22 10-7.5 7.5L13 16" /></>);
 const LinkIcon = mk(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>);
 const Clock = mk(<><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>);
+const Sparkles = mk(<><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" /><path d="M20 3v4" /><path d="M22 5h-4" /><path d="M4 17v2" /><path d="M5 18H3" /></>);
 const Gem = mk(<><path d="M6 3h12l4 6-10 13L2 9Z" /><path d="M11 3 8 9l4 13 4-13-3-6" /><path d="M2 9h20" /></>);
 
 // Logo : livre ouvert (même construction que le « compte en T » de Finances)
@@ -237,6 +238,7 @@ const donneesInitiales = () => {
     gea: null,
     moodle: null,
     podcasts: [],
+    demandesQcm: [],
     mailsLus: [],
     boiteEnvoi: [],
     obsidian: null,
@@ -248,7 +250,7 @@ const migrer = (d) => {
   const base = donneesInitiales();
   if (!d || typeof d !== 'object') return base;
   const out = { ...base, ...d };
-  ['ressources', 'semestres', 'evaluations', 'fiches', 'qcms', 'edtImport', 'examensIgnores', 'podcasts', 'mailsLus', 'boiteEnvoi'].forEach(k => { if (!Array.isArray(out[k])) out[k] = base[k]; });
+  ['ressources', 'semestres', 'evaluations', 'fiches', 'qcms', 'edtImport', 'examensIgnores', 'podcasts', 'demandesQcm', 'mailsLus', 'boiteEnvoi'].forEach(k => { if (!Array.isArray(out[k])) out[k] = base[k]; });
   if (!out.edtModifs || typeof out.edtModifs !== 'object') out.edtModifs = {};
   const defauts = Object.fromEntries(RESSOURCES_GEA_S1.map(([code, , alias]) => [code, alias]));
   out.ressources = out.ressources.map(r => (defauts[r.code]
@@ -1934,7 +1936,7 @@ const FicheEditor = ({ open, initial, matieres, onSave, onClose }) => {
   );
 };
 
-const FicheLecteur = ({ fiche, ressources, onEdit, onDelete, onTogglePin, onClose }) => {
+const FicheLecteur = ({ fiche, ressources, onEdit, onDelete, onTogglePin, onClose, onGenererQcm }) => {
   const [masquer, setMasquer] = useState(false);
   if (!fiche) return null;
   const info = infoMatiere(ressources, fiche.matiere);
@@ -1952,6 +1954,9 @@ const FicheLecteur = ({ fiche, ressources, onEdit, onDelete, onTogglePin, onClos
         <>
           <Button variant="ghost" onClick={onDelete} style={{ color: 'var(--neg)', marginRight: 'auto' }}><Trash2 size={14} /> Supprimer</Button>
           <Button variant="secondary" onClick={() => telecharger(`${nomFichier(fiche.titre)}.md`, `# ${fiche.titre}\n\n${fiche.contenu}`, 'text/markdown')}><Download size={14} /> .md</Button>
+          {onGenererQcm && fiche.contenu.trim().length > 80 && (
+            <Button variant="secondary" onClick={() => onGenererQcm({ titre: fiche.titre, matiere: fiche.matiere, contenu: fiche.contenu, source: `fiche:${fiche.id}` })}><Sparkles size={14} /> QCM</Button>
+          )}
           <Button onClick={onEdit}><Pencil size={14} /> Modifier</Button>
         </>
       )}>
@@ -2038,7 +2043,7 @@ const ImportFiches = ({ open, matieres, ressources, onImport, onClose }) => {
   );
 };
 
-const FichesView = ({ data, commit, focus, signal, embedded = false }) => {
+const FichesView = ({ data, commit, focus, signal, embedded = false, onGenererQcm }) => {
   const matieres = useMatieres(data);
   const [q, setQ] = useState('');
   const [filtre, setFiltre] = useState(() => (focus && focus.view === 'fiches' && focus.matiere) || 'all');
@@ -2112,7 +2117,7 @@ const FichesView = ({ data, commit, focus, signal, embedded = false }) => {
         ))}
       </Card>
 
-      <FicheLecteur fiche={ficheLue} ressources={data.ressources} onClose={() => setLue(null)}
+      <FicheLecteur fiche={ficheLue} ressources={data.ressources} onClose={() => setLue(null)} onGenererQcm={onGenererQcm ? (d) => { onGenererQcm(d); setLue(null); } : null}
         onEdit={() => { setEdit(ficheLue); setLue(null); }}
         onDelete={() => setSuppr(ficheLue)}
         onTogglePin={() => commit(d => ({ ...d, fiches: d.fiches.map(f => (f.id === ficheLue.id ? { ...f, epinglee: !f.epinglee } : f)) }))} />
@@ -2298,7 +2303,7 @@ const ObsidianConfig = ({ initial, onSave, onClose }) => {
   );
 };
 
-const ObsidianView = ({ obs, token, ressources, matieres, onConfigurer, onEnFiche }) => {
+const ObsidianView = ({ obs, token, ressources, matieres, onConfigurer, onEnFiche, onGenererQcm }) => {
   const [q, setQ] = useState('');
   const [ouvert, setOuvert] = useState(null);
   const [texte, setTexte] = useState('');
@@ -2358,7 +2363,14 @@ const ObsidianView = ({ obs, token, ressources, matieres, onConfigurer, onEnFich
       </Card>
       {ouvert && (
         <Modal open onClose={() => setOuvert(null)} title={nomSansExt(ouvert.path)} size="lg"
-          headExtra={texte && <IconButton label="Copier en fiche" onClick={() => onEnFiche({ titre: nomSansExt(ouvert.path), contenu: depuisObsidian(texte), matiere: '' })}><Copy size={15} /></IconButton>}>
+          headExtra={texte && (
+            <>
+              {onGenererQcm && depuisObsidian(texte).length > 80 && (
+                <IconButton label="Générer un QCM" onClick={() => { onGenererQcm({ titre: nomSansExt(ouvert.path), matiere: dossierDe(ouvert.rel).split('/').pop() || '', contenu: depuisObsidian(texte), source: `obsidian:${ouvert.path}` }); setOuvert(null); }}><Sparkles size={15} /></IconButton>
+              )}
+              <IconButton label="Copier en fiche" onClick={() => onEnFiche({ titre: nomSansExt(ouvert.path), contenu: depuisObsidian(texte), matiere: '' })}><Copy size={15} /></IconButton>
+            </>
+          )}>
           {erreur ? <p className="text-xs t-neg">{erreur}</p>
             : texte ? <Markdown texte={depuisObsidian(texte)} /> : <p className="t-muted text-xs">Chargement…</p>}
         </Modal>
@@ -2452,22 +2464,35 @@ const ONGLETS_RESSOURCES = [
   { id: 'fiches', label: 'Fiches', icon: FileText },
   { id: 'qcm', label: 'QCM', icon: ListChecks },
   { id: 'podcasts', label: 'Podcasts', icon: Headphones },
-  { id: 'obsidian', label: 'Obsidian', icon: Gem },
 ];
 
-const RessourcesView = ({ data, commit, focus, signal, onglet, onOnglet, envoyer, token, montrer }) => {
+const RessourcesView = ({ data, commit, focus, signal, onglet, onOnglet, envoyer, token, onGenererQcm }) => {
   const obs = useObsidian(token, data.obsidian);
-  const matieres = useMatieres(data);
-  const [config, setConfig] = useState(false);
-  const nbNotes = obs.fichiers.filter(x => /\.md$/i.test(x.path)).length;
   const nbPod = (data.podcasts || []).length + obs.fichiers.filter(x => estAudio(x.path)).length;
-  const comptes = { fiches: data.fiches.length, qcm: data.qcms.length, podcasts: nbPod, obsidian: obs.depot ? nbNotes : undefined };
+  const comptes = { fiches: data.fiches.length, qcm: data.qcms.length + (data.demandesQcm || []).length, podcasts: nbPod };
   const boutons = {
     fiches: <><Button variant="secondary" className="only-desk" onClick={() => envoyer('import')}><Upload size={15} /> Importer</Button><Button className="only-desk" onClick={() => envoyer('add')}><Plus size={15} /> Fiche</Button></>,
     qcm: <><Button variant="secondary" className="only-desk" onClick={() => envoyer('import')}><Upload size={15} /> Importer</Button><Button className="only-desk" onClick={() => envoyer('add')}><Plus size={15} /> QCM</Button></>,
     podcasts: <Button className="only-desk" onClick={() => envoyer('add')}><Plus size={15} /> Podcast</Button>,
-    obsidian: null,
   }[onglet];
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Ressources">{boutons}</PageHeader>
+      <Seg fill className="res-seg" label="Ressources" value={onglet} onChange={onOnglet}
+        options={ONGLETS_RESSOURCES.map(o => { const Ic = o.icon; return { id: o.id, label: o.label, icon: <Ic size={15} />, count: comptes[o.id] || undefined }; })} />
+      {onglet === 'fiches' && <FichesView embedded key={focus?.n || 'fiches'} data={data} commit={commit} focus={focus} signal={signal} onGenererQcm={onGenererQcm} />}
+      {onglet === 'qcm' && <QcmView embedded key={focus?.n || 'qcm'} data={data} commit={commit} focus={focus} signal={signal} />}
+      {onglet === 'podcasts' && <PodcastsView key={focus?.n || 'podcasts'} data={data} commit={commit} focus={focus} signal={signal} obs={obs} token={token} />}
+    </div>
+  );
+};
+
+// ---------- Rubrique Obsidian ----------
+const ObsidianRubrique = ({ data, commit, token, montrer, onGenererQcm }) => {
+  const obs = useObsidian(token, data.obsidian);
+  const matieres = useMatieres(data);
+  const [config, setConfig] = useState(false);
+  const nbNotes = obs.fichiers.filter(x => /\.md$/i.test(x.path)).length;
   const enFiche = (f) => {
     const maintenant = new Date().toISOString();
     commit(d => ({ ...d, fiches: [...d.fiches, { id: uid('fiche'), ...f, creeLe: maintenant, modifieLe: maintenant }] }));
@@ -2475,13 +2500,9 @@ const RessourcesView = ({ data, commit, focus, signal, onglet, onOnglet, envoyer
   };
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Ressources">{boutons}</PageHeader>
-      <Seg fill className="res-seg" label="Ressources" value={onglet} onChange={onOnglet}
-        options={ONGLETS_RESSOURCES.map(o => { const Ic = o.icon; return { id: o.id, label: o.label, icon: <Ic size={15} />, count: comptes[o.id] || undefined }; })} />
-      {onglet === 'fiches' && <FichesView embedded key={focus?.n || 'fiches'} data={data} commit={commit} focus={focus} signal={signal} />}
-      {onglet === 'qcm' && <QcmView embedded key={focus?.n || 'qcm'} data={data} commit={commit} focus={focus} signal={signal} />}
-      {onglet === 'podcasts' && <PodcastsView key={focus?.n || 'podcasts'} data={data} commit={commit} focus={focus} signal={signal} obs={obs} token={token} />}
-      {onglet === 'obsidian' && <ObsidianView obs={obs} token={token} ressources={data.ressources} matieres={matieres} onConfigurer={() => setConfig(true)} onEnFiche={enFiche} />}
+      <PageHeader title="Obsidian" meta={obs.depot ? pluriel(nbNotes, 'note') : null} />
+      <ObsidianView obs={obs} token={token} ressources={data.ressources} matieres={matieres}
+        onConfigurer={() => setConfig(true)} onEnFiche={enFiche} onGenererQcm={onGenererQcm} />
       {config && (
         <ObsidianConfig initial={data.obsidian} onClose={() => setConfig(false)}
           onSave={(c) => { commit(d => ({ ...d, obsidian: c })); setConfig(false); }} />
@@ -2912,6 +2933,17 @@ const QcmView = ({ data, commit, focus, signal, embedded = false }) => {
           <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un QCM ou un thème" style={{ flex: '1 1 220px' }} />
           <SelectMatiere tout value={filtre} onChange={setFiltre} ressources={matieres.ressources} libres={matieres.libres} style={{ flex: '1 1 180px' }} />
         </div>
+        {(data.demandesQcm || []).map(d => (
+          <div key={d.id} className="q-row f-row f-line q-attente">
+            <span className="q-play"><Sparkles size={14} /></span>
+            <span className="l-lib">
+              <span className="truncate t-ink font-medium">{d.titre}</span>
+              <span className="t-muted text-xs">QCM en préparation</span>
+            </span>
+            <span />
+            <span />
+          </div>
+        ))}
         {filtres.length === 0 ? (
           <Vide action={!data.qcms.length && (
             <div className="flex flex-wrap justify-center gap-2">
@@ -3869,8 +3901,9 @@ const NAV = [
   { id: 'mails', label: 'Mails', court: 'Mails', icon: Mail },
   { id: 'notes', label: 'Notes', court: 'Notes', icon: GraduationCap },
   { id: 'ressources', label: 'Ressources', court: 'Ressources', icon: Library },
+  { id: 'obsidian', label: 'Obsidian', court: 'Obsidian', icon: Gem },
 ];
-const SOUS_RESSOURCES = ['fiches', 'qcm', 'podcasts', 'obsidian'];
+const SOUS_RESSOURCES = ['fiches', 'qcm', 'podcasts'];
 
 function AppInner() {
   // Mobile : pas de zoom, plein écran
@@ -4157,8 +4190,59 @@ function AppInner() {
   const repondreMail = (item) => {
     commit(d => ({ ...d, boiteEnvoi: [...(d.boiteEnvoi || []), item] }));
     montrer('Réponse en attente d’envoi');
-    if (repo && gistToken) setTimeout(() => { gistApi.lancerEdt(gistToken, repo).catch(() => {}); }, 4000);
+    relancerRobot();
   };
+
+  // Lance le robot après l'enregistrement du Gist, puis recharge son résultat dès qu'il change
+  const attenteRobot = useRef(false);
+  const relancerRobot = async () => {
+    if (!repo || !gistToken || !gistId || attenteRobot.current) return;
+    attenteRobot.current = true;
+    const avant = edtDistant?.majLe || '';
+    try {
+      await new Promise(r => setTimeout(r, 4000));
+      await gistApi.lancerEdt(gistToken, repo);
+      for (let i = 0; i < 18; i++) {
+        await new Promise(r => setTimeout(r, 10000));
+        const { edt } = await gistApi.readAll(gistToken, gistId);
+        if (edt && edt.majLe && edt.majLe !== avant) { setEdtDistant(edt); break; }
+      }
+    } catch { /* le robot passera de toute façon dans les 30 minutes */ }
+    finally { attenteRobot.current = false; }
+  };
+
+  // QCM générés par l'IA à partir d'une fiche ou d'une note Obsidian (traités par le robot)
+  const genererQcm = ({ titre, matiere, contenu, source }) => {
+    const texte = String(contenu || '').trim();
+    const id = uid('ia');
+    commit(d => ({ ...d, demandesQcm: [...(d.demandesQcm || []), { id, titre: titre || 'Fiche', matiere: matiere || '', source: source || '', contenu: texte.slice(0, 20000), nb: texte.length < 1500 ? 6 : 10, creeLe: new Date().toISOString() }] }));
+    montrer('QCM en préparation');
+    relancerRobot();
+  };
+  useEffect(() => {
+    const resultats = (edtDistant && edtDistant.qcmsIA) || [];
+    const demandes = data.demandesQcm || [];
+    const finies = demandes.filter(dm => resultats.some(r => r.id === dm.id));
+    if (!finies.length) return;
+    const maintenant = new Date().toISOString();
+    const nouveaux = [];
+    const erreurs = [];
+    finies.forEach(dm => {
+      const r = resultats.find(x => x.id === dm.id);
+      const qs = r.ok && r.qcm && Array.isArray(r.qcm.questions) ? r.qcm.questions.map(normaliserQuestion).filter(q => q.enonce && q.propositions.length >= 2 && q.reponses.length) : [];
+      if (qs.length) {
+        nouveaux.push({ id: `qcm_${dm.id}`, titre: (r.qcm.titre || `QCM · ${dm.titre}`).trim(), matiere: dm.matiere || '', questions: qs, tentatives: [], stats: {}, ia: true, creeLe: maintenant, modifieLe: maintenant });
+      } else erreurs.push(dm.titre);
+    });
+    commit(d => ({
+      ...d,
+      qcms: [...d.qcms, ...nouveaux.filter(n => !d.qcms.some(x => x.id === n.id))],
+      demandesQcm: (d.demandesQcm || []).filter(dm => !finies.some(f => f.id === dm.id)),
+    }));
+    if (nouveaux.length) montrer(nouveaux.length > 1 ? `${nouveaux.length} QCM prêts` : `QCM prêt : ${nouveaux[0].titre}`);
+    else if (erreurs.length) montrer('Le QCM n’a pas pu être généré');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edtDistant, data.demandesQcm]);
   const annulerEnvoi = (id) => commit(d => ({ ...d, boiteEnvoi: (d.boiteEnvoi || []).filter(x => x.id !== id) }));
   useEffect(() => {
     const ok = new Set(((edtDistant && edtDistant.envoyes) || []).filter(r => r.ok).map(r => r.id));
@@ -4255,8 +4339,8 @@ function AppInner() {
       fiches: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouvelle fiche', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
       qcm: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouveau QCM', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
       podcasts: [{ label: 'Nouveau podcast', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
-      obsidian: [],
-    }[ongletRes],
+    }[ongletRes] || [],
+    obsidian: [],
     mails: [{ label: 'Actualiser', icon: <RefreshCw size={18} className={edtBusy ? 'animate-spin' : ''} />, fn: actualiserEdt }],
   }[view];
   const mails = (edtDistant && edtDistant.mails) || [];
@@ -4326,8 +4410,9 @@ function AppInner() {
                 {view === 'notes' && <NotesView key={focus?.n || 'notes'} data={data} commit={commit} focus={focus} signal={signal} />}
                 {view === 'ressources' && (
                   <RessourcesView data={data} commit={commit} focus={focus} signal={signal} envoyer={envoyer}
-                    onglet={ongletRes} onOnglet={choisirOnglet} token={gistToken} montrer={montrer} />
+                    onglet={ongletRes} onOnglet={choisirOnglet} token={gistToken} onGenererQcm={genererQcm} />
                 )}
+                {view === 'obsidian' && <ObsidianRubrique data={data} commit={commit} token={gistToken} montrer={montrer} onGenererQcm={genererQcm} />}
                 {view === 'mails' && (
                   <MailsView mails={mails} data={data} commit={commit} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy}
                     envoyes={edtDistant?.envoyes} signature={edtDistant?.signature} signatureHtml={edtDistant?.signatureHtml} onRepondre={repondreMail} onAnnulerEnvoi={annulerEnvoi} />
