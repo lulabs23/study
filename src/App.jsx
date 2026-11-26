@@ -51,6 +51,14 @@ const BookOpen = mk(<><path d="M12 7v14" /><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 
 const ExternalLink = mk(<><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>);
 const Paperclip = mk(<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />);
 const ArrowRight = mk(<><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></>);
+const Headphones = mk(<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />);
+const Library = mk(<><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></>);
+const Reply = mk(<><path d="m9 17-5-5 5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></>);
+const Send = mk(<><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /><path d="m21.854 2.147-10.94 10.939" /></>);
+const CheckCheck = mk(<><path d="M18 6 7 17l-5-5" /><path d="m22 10-7.5 7.5L13 16" /></>);
+const LinkIcon = mk(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>);
+const Clock = mk(<><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>);
+const Gem = mk(<><path d="M6 3h12l4 6-10 13L2 9Z" /><path d="M11 3 8 9l4 13 4-13-3-6" /><path d="M2 9h20" /></>);
 
 // Logo : livre ouvert (même construction que le « compte en T » de Finances)
 const LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="15" fill="#1c1917"/><path d="M32 21c-5-3.6-11.5-4.4-18-2.8v24.6c6.5-1.6 13-.8 18 2.8 5-3.6 11.5-4.4 18-2.8V18.2c-6.5-1.6-13-.8-18 2.8zM32 21v24.6" stroke="#fafaf9" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M19.5 28.5h6.5M19.5 35h4.5" stroke="#6ee7b7" stroke-width="3.5" stroke-linecap="round"/><path d="M38 28.5h6.5M40 35h4.5" stroke="#a8a29e" stroke-width="3.5" stroke-linecap="round"/></svg>';
@@ -228,6 +236,10 @@ const donneesInitiales = () => {
     examensIgnores: [],
     gea: null,
     moodle: null,
+    podcasts: [],
+    mailsLus: [],
+    boiteEnvoi: [],
+    obsidian: null,
   };
 };
 
@@ -236,7 +248,7 @@ const migrer = (d) => {
   const base = donneesInitiales();
   if (!d || typeof d !== 'object') return base;
   const out = { ...base, ...d };
-  ['ressources', 'semestres', 'evaluations', 'fiches', 'qcms', 'edtImport', 'examensIgnores'].forEach(k => { if (!Array.isArray(out[k])) out[k] = base[k]; });
+  ['ressources', 'semestres', 'evaluations', 'fiches', 'qcms', 'edtImport', 'examensIgnores', 'podcasts', 'mailsLus', 'boiteEnvoi'].forEach(k => { if (!Array.isArray(out[k])) out[k] = base[k]; });
   if (!out.edtModifs || typeof out.edtModifs !== 'object') out.edtModifs = {};
   const defauts = Object.fromEntries(RESSOURCES_GEA_S1.map(([code, , alias]) => [code, alias]));
   out.ressources = out.ressources.map(r => (defauts[r.code]
@@ -653,6 +665,36 @@ const gistApi = {
       body: JSON.stringify({ ref: 'main' }),
     });
     if (res.status !== 204) throw new Error(res.status === 403 || res.status === 404 ? 'Token sans accès aux Actions du dépôt' : `Lancement refusé (${res.status})`);
+  },
+};
+
+// Coffre Obsidian publié dans un dépôt GitHub (extension Obsidian Git) : lecture seule
+const cheminApi = (chemin) => String(chemin).split('/').map(encodeURIComponent).join('/');
+const obsidianApi = {
+  async arbre(token, depot) {
+    const r = await gh(token, `/repos/${depot}`, { cache: 'no-store' });
+    if (r.status === 404 || r.status === 403) throw new Error('Dépôt Obsidian inaccessible avec ce token');
+    if (!r.ok) throw new Error(`Dépôt Obsidian : erreur ${r.status}`);
+    const info = await r.json();
+    const t = await gh(token, `/repos/${depot}/git/trees/${encodeURIComponent(info.default_branch)}?recursive=1`, { cache: 'no-store' });
+    if (t.status === 409) return { fichiers: [], le: new Date().toISOString() };
+    if (!t.ok) throw new Error(`Dépôt Obsidian : erreur ${t.status}`);
+    const j = await t.json();
+    const fichiers = (j.tree || [])
+      .filter(x => x.type === 'blob' && !/(^|\/)\.(obsidian|trash|git)\//.test(x.path) && !/(^|\/)\./.test(x.path.split('/').pop()))
+      .map(x => ({ path: x.path, sha: x.sha, taille: x.size || 0 }));
+    return { fichiers, le: new Date().toISOString() };
+  },
+  async texte(token, depot, chemin) {
+    const r = await gh(token, `/repos/${depot}/contents/${cheminApi(chemin)}`, { headers: { Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
+    if (!r.ok) throw new Error(`Lecture impossible (${r.status})`);
+    return r.text();
+  },
+  async audio(token, depot, sha, mime) {
+    const r = await gh(token, `/repos/${depot}/git/blobs/${sha}`, { headers: { Accept: 'application/vnd.github.raw' } });
+    if (!r.ok) throw new Error(`Lecture impossible (${r.status})`);
+    const b = await r.blob();
+    return URL.createObjectURL(mime ? new Blob([b], { type: mime }) : b);
   },
 };
 
@@ -1108,12 +1150,11 @@ const CoursModal = ({ cours: c, onClose, onGoto, compteurs, onEdit }) => {
 const TYPES_COURS = [{ id: '', label: '—' }, { id: 'CM', label: 'CM' }, { id: 'TD', label: 'TD' }, { id: 'TP', label: 'TP' }, { id: 'CC', label: 'CC' }];
 
 const CoursEdit = ({ cours: c, ressources, modifs, onSave, onClose }) => {
-  const [portee, setPortee] = useState('titre');
+  const [portee, setPortee] = useState('id');
   const [f, setF] = useState(null);
   useEffect(() => {
     if (!c) return;
-    const p = modifs[`id:${c.id}`] ? 'id' : 'titre';
-    setPortee(p);
+    setPortee('id');
     setF({ titre: c.titre, code: c.code, type: c.type, examen: c.examen, salle: c.salle, masque: c.masque });
   }, [c, modifs]);
   if (!c || !f) return null;
@@ -1144,7 +1185,7 @@ const CoursEdit = ({ cours: c, ressources, modifs, onSave, onClose }) => {
       <div className="flex flex-col gap-4">
         <Field label="Appliquer à" as="div">
           <Seg fill label="Portée" value={portee} onChange={setPortee}
-            options={[{ id: 'titre', label: 'Tous les cours identiques' }, { id: 'id', label: 'Ce cours' }]} />
+            options={[{ id: 'id', label: 'Ce cours' }, { id: 'titre', label: 'Tous les cours identiques' }]} />
         </Field>
         <p className="t-muted text-xs f-mono">{c.titreBrut}</p>
         <Field label="Matière">
@@ -1392,15 +1433,19 @@ const texteObjectif = (st) => {
 const EvalForm = ({ open, initial, sem, ressources, onSave, onDelete, onClose }) => {
   const [f, setF] = useState(null);
   useEffect(() => {
-    if (open) setF({ libelle: '', note: '', sur: '20', coef: '1', date: toISODate(new Date()), ressource: '', ...initial,
-      ...(initial && initial.note !== undefined && initial.note !== null ? { note: fmtNum(initial.note) } : {}),
-      ...(initial && initial.sur !== undefined ? { sur: fmtNum(initial.sur) } : {}),
-      ...(initial && initial.coef !== undefined ? { coef: fmtNum(initial.coef) } : {}) });
+    if (open) setF({ ...initial,
+      libelle: (initial && initial.libelle) || '',
+      ressource: (initial && initial.ressource) || '',
+      date: (initial && initial.date) || toISODate(new Date()),
+      note: initial && initial.note != null && initial.note !== '' ? fmtNum(parseNum(initial.note)) : '',
+      sur: initial && initial.sur != null && initial.sur !== '' ? fmtNum(parseNum(initial.sur)) : '20',
+      coef: initial && initial.coef != null && initial.coef !== '' ? fmtNum(parseNum(initial.coef)) : '1' });
   }, [open, initial]);
   if (!open || !f) return null;
   const set = (k) => (e) => setF(prev => ({ ...prev, [k]: e.target.value }));
   const note = parseNum(f.note), sur = parseNum(f.sur) || 20, coef = parseNum(f.coef);
-  const erreur = f.note !== '' && (note === null || note < 0 || note > sur) ? `Note entre 0 et ${fmtNum(sur)}` : '';
+  const sansNote = String(f.note ?? '').trim() === '';
+  const erreur = !sansNote && (note === null || note < 0 || note > sur) ? `Note entre 0 et ${fmtNum(sur)}` : '';
   const ok = f.ressource && !erreur && (coef === null || coef >= 0);
   const vus = new Set();
   const groupes = sem.ues.map(ue => ({
@@ -1415,7 +1460,7 @@ const EvalForm = ({ open, initial, sem, ressources, onSave, onDelete, onClose })
       semestreId: f.semestreId || sem.id,
       ressource: f.ressource,
       libelle: f.libelle.trim(),
-      note: f.note === '' ? null : note,
+      note: sansNote ? null : note,
       sur,
       coef: coef === null ? 1 : coef,
       date: f.date,
@@ -1778,10 +1823,10 @@ const useMatieres = (data) => useMemo(() => {
   const duSemestre = data.ressources.filter(r => codes.has(r.code));
   const autresRes = data.ressources.filter(r => !codes.has(r.code));
   const liste = [...duSemestre, ...autresRes];
-  const libres = Array.from(new Set([...data.fiches, ...data.qcms].map(x => String(x.matiere || '').trim())
+  const libres = Array.from(new Set([...data.fiches, ...data.qcms, ...(data.podcasts || [])].map(x => String(x.matiere || '').trim())
     .filter(v => v && !trouverRessource(data.ressources, v)))).sort((a, b) => a.localeCompare(b, 'fr'));
   return { ressources: liste, libres };
-}, [data.semestres, data.semestreActif, data.ressources, data.fiches, data.qcms]);
+}, [data.semestres, data.semestreActif, data.ressources, data.fiches, data.qcms, data.podcasts]);
 
 // Regroupe des éléments par matière, dans l'ordre des ressources
 const grouperParMatiere = (items, ressources) => {
@@ -1993,7 +2038,7 @@ const ImportFiches = ({ open, matieres, ressources, onImport, onClose }) => {
   );
 };
 
-const FichesView = ({ data, commit, focus, signal }) => {
+const FichesView = ({ data, commit, focus, signal, embedded = false }) => {
   const matieres = useMatieres(data);
   const [q, setQ] = useState('');
   const [filtre, setFiltre] = useState(() => (focus && focus.view === 'fiches' && focus.matiere) || 'all');
@@ -2025,10 +2070,12 @@ const FichesView = ({ data, commit, focus, signal }) => {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Fiches" meta={pluriel(filtrees.length, 'fiche')}>
-        <Button variant="secondary" className="only-desk" onClick={() => setImp(true)}><Upload size={15} /> Importer</Button>
-        <Button className="only-desk" onClick={() => setEdit({ matiere: filtre !== 'all' ? filtre : '' })}><Plus size={15} /> Fiche</Button>
-      </PageHeader>
+      {!embedded && (
+        <PageHeader title="Fiches" meta={pluriel(filtrees.length, 'fiche')}>
+          <Button variant="secondary" className="only-desk" onClick={() => setImp(true)}><Upload size={15} /> Importer</Button>
+          <Button className="only-desk" onClick={() => setEdit({ matiere: filtre !== 'all' ? filtre : '' })}><Plus size={15} /> Fiche</Button>
+        </PageHeader>
+      )}
 
       <Card className="overflow-hidden">
         <div className="f-toolbar">
@@ -2083,6 +2130,364 @@ const FichesView = ({ data, commit, focus, signal }) => {
 const apercuFiche = (contenu) => {
   const l = String(contenu || '').split('\n').map(x => x.replace(/^[#>\-*+\s|]+|\*\*|==|`/g, '').trim()).find(x => x && !/^[-:| ]+$/.test(x));
   return l ? l.slice(0, 140) : '';
+};
+
+// ============================================================
+// RESSOURCES — fiches, QCM, podcasts et coffre Obsidian
+// ============================================================
+
+const EXT_AUDIO = { mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', webm: 'audio/webm' };
+const extension = (chemin) => { const m = String(chemin || '').split(/[?#]/)[0].match(/\.([a-z0-9]+)$/i); return m ? m[1].toLowerCase() : ''; };
+const estAudio = (chemin) => !!EXT_AUDIO[extension(chemin)];
+const nomSansExt = (chemin) => String(chemin || '').split('/').pop().replace(/\.[a-z0-9]+$/i, '');
+const dossierDe = (chemin) => { const p = String(chemin || '').split('/'); p.pop(); return p.join('/'); };
+
+// Liens de partage courants → lien de lecture directe
+const lienLecture = (url) => {
+  const u = String(url || '').trim();
+  const drive = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/) || u.match(/drive\.google\.com\/(?:open|uc)\?(?:.*&)?id=([^&#]+)/);
+  if (drive) return `https://drive.google.com/uc?export=download&id=${drive[1]}`;
+  if (/^https:\/\/www\.dropbox\.com\//.test(u)) return u.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace(/([?&])dl=0&?/, '$1').replace(/[?&]$/, '');
+  return u;
+};
+const lisibleEnDirect = (url) => estAudio(url) || lienLecture(url) !== String(url || '').trim();
+
+// Syntaxe propre à Obsidian ramenée au markdown des fiches
+const depuisObsidian = (texte) => String(texte || '')
+  .replace(/^﻿?---\n[\s\S]*?\n---\n?/, '')
+  .replace(/%%[\s\S]*?%%/g, '')
+  .replace(/!\[\[[^\]]*\]\]/g, '')
+  .replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?\|([^\]]+)\]\]/g, '$2')
+  .replace(/\[\[([^\]|#]+)(?:#([^\]|]*))?\]\]/g, (_, a, h) => (h ? `${a} › ${h}` : a))
+  .replace(/^(\s*>\s*)\[!(\w+)\][+-]?\s*(.*)$/gm, (_, q, type, titre) => `${q}**${titre || type.charAt(0).toUpperCase() + type.slice(1)}**`)
+  .trim();
+
+const posLecture = {
+  get: (id) => Number(LS.get(`etudes_pod_${id}`, '0')) || 0,
+  set: (id, t) => LS.set(`etudes_pod_${id}`, t > 5 ? String(Math.floor(t)) : ''),
+};
+
+// ---------- Lecteur audio ----------
+const PodcastLecteur = ({ podcast: p, ressources, token, depot, onClose, onEcoute, onEdit }) => {
+  const [src, setSrc] = useState(p && !p.obsidian ? lienLecture(p.url) : '');
+  const [erreur, setErreur] = useState('');
+  const ref = useRef(null);
+  const dernier = useRef(0);
+  useEffect(() => {
+    if (!p || !p.obsidian) return undefined;
+    let url = '';
+    let actif = true;
+    obsidianApi.audio(token, depot, p.sha, EXT_AUDIO[extension(p.path)])
+      .then(u => { url = u; if (actif) setSrc(u); else URL.revokeObjectURL(u); })
+      .catch(e => actif && setErreur(e.message));
+    return () => { actif = false; if (url) URL.revokeObjectURL(url); };
+  }, [p, token, depot]);
+  if (!p) return null;
+  const direct = p.obsidian || lisibleEnDirect(p.url);
+  const info = infoMatiere(ressources, p.matiere);
+  return (
+    <Modal open onClose={onClose} title={p.titre} size="md"
+      headExtra={!p.obsidian && onEdit && <IconButton label="Modifier" onClick={onEdit}><Pencil size={15} /></IconButton>}
+      footer={(
+        <>
+          {!p.obsidian && p.url && <LienBouton href={p.url}><ExternalLink size={14} /> Ouvrir le lien</LienBouton>}
+          {!p.obsidian && <Button variant={p.ecoute ? 'secondary' : 'primary'} onClick={() => onEcoute(!p.ecoute)}>{p.ecoute ? 'Marquer non écouté' : <><Check size={14} /> Écouté</>}</Button>}
+        </>
+      )}>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          {p.matiere && <Matiere info={info} />}
+          {p.obsidian && <span className="t-muted text-xs">{p.path}</span>}
+        </div>
+        {direct ? (
+          erreur ? <p className="text-xs t-neg">{erreur}</p>
+            : src ? (
+              <audio ref={ref} className="pd-audio" controls autoPlay preload="auto" src={src}
+                onLoadedMetadata={() => { const t = posLecture.get(p.id); if (ref.current && t && t < (ref.current.duration || Infinity) - 5) ref.current.currentTime = t; }}
+                onTimeUpdate={() => { const t = ref.current?.currentTime || 0; if (Math.abs(t - dernier.current) > 5) { dernier.current = t; posLecture.set(p.id, t); } }}
+                onEnded={() => { posLecture.set(p.id, 0); if (!p.obsidian && !p.ecoute) onEcoute(true); }}
+                onError={() => setErreur('Lecture impossible ici : ouvrir le lien.')} />
+            ) : <p className="t-muted text-xs">Chargement…</p>
+        ) : (
+          <Vide action={p.url && <LienBouton href={p.url} variant="primary"><Play size={14} /> Écouter</LienBouton>}>Lecture sur le site d’origine</Vide>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+const PodcastEditeur = ({ open, initial, matieres, onSave, onDelete, onClose }) => {
+  const [f, setF] = useState(null);
+  useEffect(() => { if (open) setF({ titre: '', matiere: '', url: '', ...initial }); }, [open, initial]);
+  if (!open || !f) return null;
+  const ok = f.titre.trim() && /^https?:\/\//i.test(f.url.trim());
+  const enregistrer = () => {
+    if (!ok) return;
+    onSave({ ...f, id: f.id || uid('pod'), titre: f.titre.trim(), url: f.url.trim(), ajouteLe: f.ajouteLe || new Date().toISOString() });
+  };
+  return (
+    <Modal open onClose={onClose} title={f.id ? 'Modifier le podcast' : 'Nouveau podcast'} size="sm"
+      footer={(
+        <>
+          {f.id && <Button variant="ghost" onClick={() => onDelete(f)} style={{ color: 'var(--neg)', marginRight: 'auto' }}>Supprimer</Button>}
+          <Button variant="secondary" onClick={onClose}>Annuler</Button>
+          <Button onClick={enregistrer} disabled={!ok}>Enregistrer</Button>
+        </>
+      )}>
+      <div className="flex flex-col gap-4">
+        <Field label="Titre"><Input value={f.titre} onChange={(e) => setF(p => ({ ...p, titre: e.target.value }))} placeholder="Comptabilité · chapitre 3" /></Field>
+        <Field label="Matière" as="div">
+          <MatiereChamp value={f.matiere} onChange={(v) => setF(p => ({ ...p, matiere: v }))} matieres={matieres} />
+        </Field>
+        <Field label="Lien"><Input value={f.url} onChange={(e) => setF(p => ({ ...p, url: e.target.value }))} inputMode="url" placeholder="https://" /></Field>
+      </div>
+    </Modal>
+  );
+};
+
+// ---------- Coffre Obsidian : arbre mis en cache, actualisé à chaque ouverture ----------
+const useObsidian = (token, conf) => {
+  const depot = conf && conf.depot;
+  const cle = depot ? `etudes_obs_${depot}` : null;
+  const [etat, setEtat] = useState(() => (cle && LS.getJSON(cle)) || null);
+  const [charge, setCharge] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const actualiser = useCallback(async () => {
+    if (!token || !depot) return;
+    setCharge(true); setErreur('');
+    try {
+      const a = await obsidianApi.arbre(token, depot);
+      setEtat(a);
+      try { window.localStorage.setItem(cle, JSON.stringify(a)); } catch { /* cache plein */ }
+    } catch (e) { setErreur(e.message); }
+    finally { setCharge(false); }
+  }, [token, depot, cle]);
+  useEffect(() => {
+    setEtat((cle && LS.getJSON(cle)) || null);
+    actualiser();
+    const onVisible = () => { if (document.visibilityState === 'visible') actualiser(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [actualiser, cle]);
+  const prefixe = String((conf && conf.dossier) || '').replace(/^\/+|\/+$/g, '');
+  const fichiers = ((etat && etat.fichiers) || [])
+    .filter(x => !prefixe || x.path === prefixe || x.path.startsWith(prefixe + '/'))
+    .map(x => ({ ...x, rel: prefixe ? x.path.slice(prefixe.length + 1) : x.path }));
+  return { depot, fichiers, le: etat && etat.le, charge, erreur, actualiser };
+};
+
+const ObsidianConfig = ({ initial, onSave, onClose }) => {
+  const [depot, setDepot] = useState((initial && initial.depot) || '');
+  const [dossier, setDossier] = useState((initial && initial.dossier) || '');
+  const propre = depot.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+  const ok = /^[\w.-]+\/[\w.-]+$/.test(propre);
+  return (
+    <Modal open onClose={onClose} title="Coffre Obsidian" size="sm"
+      footer={(
+        <>
+          {initial && initial.depot && <Button variant="ghost" onClick={() => onSave(null)} style={{ color: 'var(--neg)', marginRight: 'auto' }}>Retirer</Button>}
+          <Button variant="secondary" onClick={onClose}>Annuler</Button>
+          <Button disabled={!ok} onClick={() => onSave({ depot: propre, dossier: dossier.trim().replace(/^\/+|\/+$/g, '') })}>Enregistrer</Button>
+        </>
+      )}>
+      <div className="flex flex-col gap-4">
+        <Field label="Dépôt GitHub"><Input value={depot} onChange={(e) => setDepot(e.target.value)} placeholder="compte/coffre" autoCapitalize="off" autoCorrect="off" spellCheck={false} /></Field>
+        <Field label="Dossier"><Input value={dossier} onChange={(e) => setDossier(e.target.value)} placeholder="Tout le coffre" autoCapitalize="off" autoCorrect="off" spellCheck={false} /></Field>
+      </div>
+    </Modal>
+  );
+};
+
+const ObsidianView = ({ obs, token, ressources, matieres, onConfigurer, onEnFiche }) => {
+  const [q, setQ] = useState('');
+  const [ouvert, setOuvert] = useState(null);
+  const [texte, setTexte] = useState('');
+  const [erreur, setErreur] = useState('');
+  const cache = useRef({});
+  const notes = obs.fichiers.filter(x => /\.md$/i.test(x.path));
+  const n = norm(q);
+  const filtrees = notes.filter(x => !n || norm(x.rel).includes(n) || norm(cache.current[x.sha] || '').includes(n))
+    .sort((a, b) => a.rel.localeCompare(b.rel, 'fr', { numeric: true }));
+  const groupes = [];
+  filtrees.forEach(x => {
+    const d = dossierDe(x.rel) || 'Racine';
+    let g = groupes.find(y => y.d === d);
+    if (!g) { g = { d, items: [] }; groupes.push(g); }
+    g.items.push(x);
+  });
+  const ouvrir = async (x) => {
+    setOuvert(x); setErreur('');
+    if (cache.current[x.sha] !== undefined) { setTexte(cache.current[x.sha]); return; }
+    setTexte('');
+    try { const t = await obsidianApi.texte(token, obs.depot, x.path); cache.current[x.sha] = t; setTexte(t); }
+    catch (e) { setErreur(e.message); }
+  };
+
+  if (!obs.depot) {
+    return (
+      <Card><Vide action={<Button onClick={onConfigurer}><Gem size={15} /> Relier un coffre</Button>}>Aucun coffre Obsidian</Vide></Card>
+    );
+  }
+  return (
+    <>
+      <Card className="overflow-hidden">
+        <div className="f-toolbar">
+          <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher dans le coffre" style={{ flex: '1 1 220px' }} />
+          <span className="flex items-center gap-1 ml-auto">
+            <span className="t-muted text-xs f-num">{horodatage(obs.le)}</span>
+            <IconButton label="Actualiser" onClick={obs.actualiser}><RefreshCw size={15} className={obs.charge ? 'animate-spin' : ''} /></IconButton>
+            <IconButton label="Coffre" onClick={onConfigurer}><SlidersHorizontal size={15} /></IconButton>
+          </span>
+        </div>
+        {obs.erreur && <p className="text-xs t-neg" style={{ padding: '10px 16px 0' }}>{obs.erreur}</p>}
+        {filtrees.length === 0 ? <Vide>{obs.charge ? 'Chargement…' : 'Aucune note'}</Vide> : groupes.map(g => (
+          <div key={g.d}>
+            <div className="f-group-h">
+              <span className="f-cat min-w-0"><FolderOpen size={14} className="t-muted shrink-0" /><span className="truncate">{g.d}</span></span>
+              <span className="t-muted f-num text-xs">{g.items.length}</span>
+            </div>
+            {g.items.map((x, i) => (
+              <button key={x.path} type="button" className={`l-row f-row ${i > 0 ? 'f-line' : ''}`} onClick={() => ouvrir(x)}>
+                <span className="l-lib"><span className="truncate t-ink font-medium">{nomSansExt(x.path)}</span></span>
+                <span />
+                <ChevronRight size={15} className="t-faint shrink-0" />
+              </button>
+            ))}
+          </div>
+        ))}
+      </Card>
+      {ouvert && (
+        <Modal open onClose={() => setOuvert(null)} title={nomSansExt(ouvert.path)} size="lg"
+          headExtra={texte && <IconButton label="Copier en fiche" onClick={() => onEnFiche({ titre: nomSansExt(ouvert.path), contenu: depuisObsidian(texte), matiere: '' })}><Copy size={15} /></IconButton>}>
+          {erreur ? <p className="text-xs t-neg">{erreur}</p>
+            : texte ? <Markdown texte={depuisObsidian(texte)} /> : <p className="t-muted text-xs">Chargement…</p>}
+        </Modal>
+      )}
+    </>
+  );
+};
+
+// ---------- Podcasts ----------
+const PodcastsView = ({ data, commit, signal, focus, obs, token }) => {
+  const matieres = useMatieres(data);
+  const [q, setQ] = useState('');
+  const [filtre, setFiltre] = useState(() => (focus && focus.view === 'podcasts' && focus.matiere) || 'all');
+  const [lu, setLu] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [suppr, setSuppr] = useState(null);
+
+  const vu = useRef(signal.n);
+  useEffect(() => {
+    if (signal.n === vu.current) return;
+    vu.current = signal.n;
+    if (signal.type === 'add') setEdit({ matiere: filtre !== 'all' ? filtre : '' });
+  }, [signal, filtre]);
+
+  const duCoffre = obs.fichiers.filter(x => estAudio(x.path))
+    .map(x => ({ id: `obs:${x.sha}`, titre: nomSansExt(x.path), matiere: dossierDe(x.rel).split('/').pop() || 'Obsidian', path: x.path, sha: x.sha, obsidian: true }));
+  const tous = [...(data.podcasts || []), ...duCoffre];
+  const n = norm(q);
+  const filtres = tous
+    .filter(p => filtre === 'all' || infoMatiere(data.ressources, p.matiere).cle === infoMatiere(data.ressources, filtre).cle)
+    .filter(p => !n || norm(p.titre).includes(n))
+    .sort((a, b) => (a.ecoute ? 1 : 0) - (b.ecoute ? 1 : 0) || String(b.ajouteLe || '').localeCompare(String(a.ajouteLe || '')) || a.titre.localeCompare(b.titre, 'fr', { numeric: true }));
+  const groupes = grouperParMatiere(filtres, data.ressources);
+  const courant = lu ? tous.find(p => p.id === lu) : null;
+
+  const enregistrer = (p) => {
+    commit(d => ({ ...d, podcasts: (d.podcasts || []).some(x => x.id === p.id) ? d.podcasts.map(x => (x.id === p.id ? p : x)) : [...(d.podcasts || []), p] }));
+    setEdit(null);
+  };
+  const marquer = (id, v) => commit(d => ({ ...d, podcasts: (d.podcasts || []).map(x => (x.id === id ? { ...x, ecoute: v } : x)) }));
+
+  return (
+    <>
+      <Card className="overflow-hidden">
+        <div className="f-toolbar">
+          <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un podcast" style={{ flex: '1 1 220px' }} />
+          <SelectMatiere tout value={filtre} onChange={setFiltre} ressources={matieres.ressources} libres={matieres.libres} style={{ flex: '1 1 180px' }} />
+        </div>
+        {filtres.length === 0 ? (
+          <Vide action={!tous.length && <Button onClick={() => setEdit({})}><Plus size={15} /> Podcast</Button>}>Aucun podcast</Vide>
+        ) : groupes.map(g => (
+          <div key={g.info.cle}>
+            <div className="f-group-h">
+              <Matiere info={g.info} />
+              <span className="t-muted f-num text-xs">{g.items.length}</span>
+            </div>
+            {g.items.map((p, i) => {
+              const pos = posLecture.get(p.id);
+              return (
+                <div key={p.id} className={`q-row f-row ${i > 0 ? 'f-line' : ''} ${p.ecoute ? 'pd-ecoute' : ''}`}>
+                  <button type="button" className="q-play no-touch-grow" onClick={() => setLu(p.id)} aria-label={`Écouter ${p.titre}`}><Play size={14} /></button>
+                  <button type="button" className="l-lib text-left" onClick={() => setLu(p.id)}>
+                    <span className="truncate t-ink font-medium">{p.titre}</span>
+                    <span className="t-muted text-xs f-num truncate">
+                      {p.obsidian ? 'Obsidian' : (p.url || '').replace(/^https?:\/\/(www\.)?/, '').split('/')[0]}
+                      {pos ? ` · reprise à ${Math.floor(pos / 60)} min ${String(Math.floor(pos % 60)).padStart(2, '0')}` : ''}
+                    </span>
+                  </button>
+                  {p.ecoute ? <span className="f-badge f-b-ok">Écouté</span> : <span />}
+                  {p.obsidian ? <span /> : <RowActions onEdit={() => setEdit(p)} onDelete={() => setSuppr(p)} />}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </Card>
+      {courant && (
+        <PodcastLecteur key={courant.id} podcast={courant} ressources={data.ressources} token={token} depot={obs.depot}
+          onClose={() => setLu(null)} onEcoute={(v) => marquer(courant.id, v)} onEdit={() => { setEdit(courant); setLu(null); }} />
+      )}
+      <PodcastEditeur open={!!edit} initial={edit} matieres={matieres} onSave={enregistrer} onDelete={(p) => setSuppr(p)} onClose={() => setEdit(null)} />
+      <Confirm open={!!suppr} title="Supprimer le podcast" onClose={() => setSuppr(null)}
+        message={suppr ? `Supprimer « ${suppr.titre} » ?` : ''}
+        onConfirm={() => { const id = suppr.id; commit(d => ({ ...d, podcasts: (d.podcasts || []).filter(x => x.id !== id) })); posLecture.set(id, 0); setSuppr(null); setEdit(null); }} />
+    </>
+  );
+};
+
+// ---------- Espace Ressources ----------
+const ONGLETS_RESSOURCES = [
+  { id: 'fiches', label: 'Fiches', icon: FileText },
+  { id: 'qcm', label: 'QCM', icon: ListChecks },
+  { id: 'podcasts', label: 'Podcasts', icon: Headphones },
+  { id: 'obsidian', label: 'Obsidian', icon: Gem },
+];
+
+const RessourcesView = ({ data, commit, focus, signal, onglet, onOnglet, envoyer, token, montrer }) => {
+  const obs = useObsidian(token, data.obsidian);
+  const matieres = useMatieres(data);
+  const [config, setConfig] = useState(false);
+  const nbNotes = obs.fichiers.filter(x => /\.md$/i.test(x.path)).length;
+  const nbPod = (data.podcasts || []).length + obs.fichiers.filter(x => estAudio(x.path)).length;
+  const comptes = { fiches: data.fiches.length, qcm: data.qcms.length, podcasts: nbPod, obsidian: obs.depot ? nbNotes : undefined };
+  const boutons = {
+    fiches: <><Button variant="secondary" className="only-desk" onClick={() => envoyer('import')}><Upload size={15} /> Importer</Button><Button className="only-desk" onClick={() => envoyer('add')}><Plus size={15} /> Fiche</Button></>,
+    qcm: <><Button variant="secondary" className="only-desk" onClick={() => envoyer('import')}><Upload size={15} /> Importer</Button><Button className="only-desk" onClick={() => envoyer('add')}><Plus size={15} /> QCM</Button></>,
+    podcasts: <Button className="only-desk" onClick={() => envoyer('add')}><Plus size={15} /> Podcast</Button>,
+    obsidian: null,
+  }[onglet];
+  const enFiche = (f) => {
+    const maintenant = new Date().toISOString();
+    commit(d => ({ ...d, fiches: [...d.fiches, { id: uid('fiche'), ...f, creeLe: maintenant, modifieLe: maintenant }] }));
+    montrer('Fiche créée');
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Ressources">{boutons}</PageHeader>
+      <Seg fill className="res-seg" label="Ressources" value={onglet} onChange={onOnglet}
+        options={ONGLETS_RESSOURCES.map(o => { const Ic = o.icon; return { id: o.id, label: o.label, icon: <Ic size={15} />, count: comptes[o.id] || undefined }; })} />
+      {onglet === 'fiches' && <FichesView embedded key={focus?.n || 'fiches'} data={data} commit={commit} focus={focus} signal={signal} />}
+      {onglet === 'qcm' && <QcmView embedded key={focus?.n || 'qcm'} data={data} commit={commit} focus={focus} signal={signal} />}
+      {onglet === 'podcasts' && <PodcastsView key={focus?.n || 'podcasts'} data={data} commit={commit} focus={focus} signal={signal} obs={obs} token={token} />}
+      {onglet === 'obsidian' && <ObsidianView obs={obs} token={token} ressources={data.ressources} matieres={matieres} onConfigurer={() => setConfig(true)} onEnFiche={enFiche} />}
+      {config && (
+        <ObsidianConfig initial={data.obsidian} onClose={() => setConfig(false)}
+          onSave={(c) => { commit(d => ({ ...d, obsidian: c })); setConfig(false); }} />
+      )}
+    </div>
+  );
 };
 
 // ============================================================
@@ -2451,7 +2856,7 @@ const ImportQcm = ({ open, matieres, ressources, onImport, onClose }) => {
   );
 };
 
-const QcmView = ({ data, commit, focus, signal }) => {
+const QcmView = ({ data, commit, focus, signal, embedded = false }) => {
   const matieres = useMatieres(data);
   const [filtre, setFiltre] = useState(() => (focus && focus.view === 'qcm' && focus.matiere) || 'all');
   const [q, setQ] = useState('');
@@ -2495,10 +2900,12 @@ const QcmView = ({ data, commit, focus, signal }) => {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="QCM" meta={`${pluriel(filtres.length, 'QCM', 'QCM')} · ${pluriel(nbQuestions, 'question')}`}>
-        <Button variant="secondary" className="only-desk" onClick={() => setImp(true)}><Upload size={15} /> Importer</Button>
-        <Button className="only-desk" onClick={() => setEdit({ matiere: filtre !== 'all' ? filtre : '' })}><Plus size={15} /> QCM</Button>
-      </PageHeader>
+      {!embedded && (
+        <PageHeader title="QCM" meta={`${pluriel(filtres.length, 'QCM', 'QCM')} · ${pluriel(nbQuestions, 'question')}`}>
+          <Button variant="secondary" className="only-desk" onClick={() => setImp(true)}><Upload size={15} /> Importer</Button>
+          <Button className="only-desk" onClick={() => setEdit({ matiere: filtre !== 'all' ? filtre : '' })}><Plus size={15} /> QCM</Button>
+        </PageHeader>
+      )}
 
       <Card className="overflow-hidden">
         <div className="f-toolbar">
@@ -2554,182 +2961,16 @@ const QcmView = ({ data, commit, focus, signal }) => {
 };
 
 // ============================================================
-// MOODLE — cours, sections et échéances (importés par le favori)
+// LIENS UNICAEN
 // ============================================================
 
 const MOODLE_URL = 'https://ecampus-vert.unicaen.fr/my/';
 const WEBMAIL_URL = 'https://webmail.unicaen.fr/';
 const GEA_URL = 'https://www.iutcaen.unicaen.fr/gea/';
 
-const ICONES_MOODLE = { resource: FileText, folder: FolderOpen, url: ExternalLink, assign: Upload, quiz: ListChecks, page: BookOpen, book: BookOpen, forum: Mail, glossary: BookOpen };
-
 const LienBouton = ({ href, children, variant = 'secondary', className = '' }) => (
   <a href={href} target="_blank" rel="noopener noreferrer" className={`f-btn ${variant === 'primary' ? 'f-btn-p' : variant === 'ghost' ? 'f-btn-g' : ''} ${className}`}>{children}</a>
 );
-
-const semestreMoodle = (nom) => {
-  const m = String(nom).match(/\([RS]GEA(\d)/i);
-  return m ? `S${m[1]}` : 'Autres';
-};
-
-const MoodleView = ({ data, robot }) => {
-  const mo = data.moodle;
-  const notesRobot = ((robot && robot.cours) || []).filter(c => c.note && !/^[-–—]$/.test(String(c.note).trim()));
-  const noteParNom = Object.fromEntries(((robot && robot.cours) || []).map(c => [norm(nomMoodle(c.nom)), c.note]));
-  const majGlobale = [mo && mo.majLe, robot && robot.majLe].filter(Boolean).sort().pop();
-  const [q, setQ] = useState('');
-  const [semestre, setSemestre] = useState('S1');
-  const [ouvert, setOuvert] = useState(null);
-
-  const cours = useMemo(() => ((mo && mo.cours) || (robot && robot.cours) || []).map(c => {
-    const r = ressourceMoodle(c.nom, data.ressources);
-    return {
-      ...c,
-      titre: nomMoodle(c.nom),
-      sem: semestreMoodle(c.nom),
-      couleur: r ? r.couleur : '#a8a29e',
-      code: r ? r.code : '',
-      note: noteParNom[norm(nomMoodle(c.nom))] || null,
-      sections: c.sections || [],
-      nb: (c.sections || []).reduce((s, x) => s + x.cms.length, 0),
-    };
-  }), [mo, robot, data.ressources]);
-  const semestres = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'Autres'].filter(s => cours.some(c => c.sem === s));
-  const semAff = semestres.includes(semestre) ? semestre : (semestres[0] || 'S1');
-
-  const maintenant = Date.now();
-  const echeances = ((mo && mo.echeances) || [])
-    .filter(e => new Date(e.date).getTime() > maintenant - 14 * 86400000)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const n = norm(q);
-  const trouves = n ? cours.flatMap(c => c.sections.flatMap(s => s.cms.filter(m => norm(m.nom).includes(n) || norm(c.titre).includes(n))
-    .map(m => ({ ...m, cours: c, section: s.titre })))).slice(0, 80) : [];
-  const coursOuvert = ouvert ? cours.find(c => c.id === ouvert) : null;
-
-  if (!mo && notesRobot.length === 0 && !(robot && robot.cours && robot.cours.length)) {
-    return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title="Moodle" />
-        <Card>
-          <Vide action={<LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Ouvrir Moodle</LienBouton>}>Aucune donnée Moodle</Vide>
-        </Card>
-      </div>
-    );
-  }
-
-  // Notes récupérées par le jeton : liste à part, et report sur les cours
-  const notes = (notesRobot.length ? notesRobot : ((robot && robot.cours) || [])).map(c => {
-    const r = ressourceMoodle(c.nom, data.ressources);
-    return { nom: nomMoodle(c.nom), note: c.note, couleur: r ? r.couleur : '#a8a29e' };
-  }).filter(c => c.note && !/^[-–—]$/.test(String(c.note).trim()));
-
-  return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title="Moodle" meta={horodatage(majGlobale)}>
-        <LienBouton href={MOODLE_URL}><ExternalLink size={14} /> Moodle</LienBouton>
-      </PageHeader>
-
-      {notes.length > 0 && (
-        <Card className="overflow-hidden">
-          <PanelHead title="Notes"><span className="t-muted f-num text-xs">{notes.length}</span></PanelHead>
-          {notes.map((c, i) => (
-            <div key={i} className={`mo-note ${i > 0 ? 'f-line' : ''}`}>
-              <span className="f-sq" style={{ background: c.couleur }} />
-              <span className="truncate t-ink font-medium">{c.nom}</span>
-              <span className="f-num font-semibold t-ink shrink-0">{String(c.note).replace('.', ',')}</span>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {echeances.length > 0 && (
-        <Card className="overflow-hidden">
-          <PanelHead title="Échéances"><span className="t-muted f-num text-xs">{echeances.length}</span></PanelHead>
-          {echeances.map(e => {
-            const d = new Date(e.date);
-            const r = ressourceMoodle(e.cours, data.ressources);
-            return (
-              <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer" className="mo-ech f-row">
-                <span className="f-sq" style={{ background: r ? r.couleur : '#a8a29e' }} />
-                <span className="min-w-0 flex flex-col">
-                  <span className="truncate t-ink font-medium">{sansEmoji(e.nom)}</span>
-                  <span className="truncate t-muted text-xs">{nomMoodle(e.cours)}</span>
-                </span>
-                <span className="flex flex-col items-end gap-1 shrink-0">
-                  <span className="f-num t-ink3 text-xs">{dateCourte(d)} · {heure(d)}</span>
-                  {e.enRetard ? <span className="f-badge f-b-neg">En retard</span> : e.action ? <span className="f-badge f-b-n">{e.action}</span> : null}
-                </span>
-              </a>
-            );
-          })}
-        </Card>
-      )}
-
-      <Card className="overflow-hidden">
-        <div className="f-toolbar">
-          <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un document, un devoir…" style={{ flex: '1 1 220px' }} />
-          {!n && semestres.length > 1 && (
-            <Seg label="Semestre" value={semAff} onChange={setSemestre} options={semestres.map(s => ({ id: s, label: s, count: cours.filter(c => c.sem === s).length }))} />
-          )}
-        </div>
-        {n ? (
-          trouves.length === 0 ? <Vide>Aucun résultat</Vide> : trouves.map((m, i) => {
-            const Ic = ICONES_MOODLE[m.type] || FileText;
-            return (
-              <a key={`${m.url}${i}`} href={m.url} target="_blank" rel="noopener noreferrer" className={`mo-cm f-row ${i > 0 ? 'f-line' : ''}`}>
-                <Ic size={15} className="t-muted" />
-                <span className="min-w-0 flex flex-col">
-                  <span className="truncate t-ink">{m.nom}</span>
-                  <span className="truncate t-muted text-xs">{m.cours.titre} · {m.section}</span>
-                </span>
-                <ExternalLink size={13} className="t-faint" />
-              </a>
-            );
-          })
-        ) : cours.filter(c => c.sem === semAff).map((c, i) => (
-          <button key={c.id} type="button" className={`l-row f-row ${i > 0 ? 'f-line' : ''}`} onClick={() => (c.sections.length ? setOuvert(c.id) : window.open(c.url, '_blank', 'noopener'))}>
-            <span className="l-lib">
-              <span className="flex items-center gap-2 min-w-0">
-                <span className="f-sq" style={{ background: c.couleur }} />
-                <span className="truncate t-ink font-medium">{c.titre}</span>
-              </span>
-              <span className="t-muted text-xs f-num">{c.nb ? pluriel(c.nb, 'élément') : 'Ouvrir dans Moodle'}{c.progression != null ? ` · ${Math.round(c.progression)} %` : ''}{c.note && !/^[-–—]$/.test(String(c.note).trim()) ? ` · ${String(c.note).replace('.', ',')}` : ''}</span>
-            </span>
-            <span />
-            <ChevronRight size={15} className="t-faint" />
-          </button>
-        ))}
-      </Card>
-
-      {coursOuvert && (
-        <Modal open onClose={() => setOuvert(null)} title={coursOuvert.titre} size="lg"
-          headExtra={<a href={coursOuvert.url} target="_blank" rel="noopener noreferrer" className="f-ibtn" title="Ouvrir dans Moodle" aria-label="Ouvrir dans Moodle"><ExternalLink size={15} /></a>}>
-          <div className="flex flex-col gap-6">
-            {coursOuvert.sections.length === 0 && <Vide>Cours vide</Vide>}
-            {coursOuvert.sections.map((s, i) => (
-              <section key={i} className="flex flex-col">
-                <div className="f-sec-h"><h4>{s.titre}</h4><span className="t-muted f-num text-xs">{s.cms.length}</span></div>
-                <div className="f-box">
-                  {s.cms.map((m, j) => {
-                    const Ic = ICONES_MOODLE[m.type] || FileText;
-                    return (
-                      <a key={j} href={m.url} target="_blank" rel="noopener noreferrer" className="f-ln f-ln-btn mo-lien">
-                        <Ic size={15} className="t-muted shrink-0" />
-                        <span className="flex-1 min-w-0 t-ink">{m.nom}</span>
-                        <ExternalLink size={13} className="t-faint shrink-0" />
-                      </a>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-};
 
 // ============================================================
 // MAILS — boîte de réception du webmail (récupérée par GitHub Actions)
@@ -2743,53 +2984,152 @@ const dateMail = (iso) => {
   return dateCourte(d);
 };
 
-const MailsView = ({ mails, majLe, onRefresh, refreshing }) => {
+
+// Adresses web et mails cliquables dans le texte brut
+const RE_LIEN = /(https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'»]|[\w.+-]+@[\w-]+(?:\.[\w-]+)+)/g;
+const avecLiens = (texte) => {
+  const t = String(texte || '');
+  const out = [];
+  let i = 0;
+  for (const m of t.matchAll(RE_LIEN)) {
+    if (m.index > i) out.push(t.slice(i, m.index));
+    const v = m[0];
+    const href = v.includes('@') && !/^https?:/.test(v) ? `mailto:${v}` : v;
+    out.push(<a key={m.index} href={href} target="_blank" rel="noopener noreferrer">{v}</a>);
+    i = m.index + v.length;
+  }
+  if (i < t.length) out.push(t.slice(i));
+  return out;
+};
+
+const citer = (mail) => {
+  const d = new Date(mail.date);
+  const quand = isNaN(d) ? '' : d.toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
+  const texte = String(mail.corps || mail.extrait || '').slice(0, 4000);
+  return `\n\nLe ${quand}, ${mail.de || mail.adresse} a écrit :\n${texte.split('\n').map(l => `> ${l}`).join('\n')}`;
+};
+
+const MailsView = ({ mails: brut, data, commit, majLe, onRefresh, refreshing, envoyes, onRepondre, onAnnulerEnvoi }) => {
+  const mails = brut || [];
   const [ouvert, setOuvert] = useState(null);
   const [q, setQ] = useState('');
-  const liste = (mails || []).filter(m => !q.trim() || norm(`${m.de} ${m.sujet} ${m.extrait}`).includes(norm(q)));
-  const nonLus = (mails || []).filter(m => m.nonLu).length;
-  const mail = ouvert ? (mails || []).find(m => m.id === ouvert) : null;
+  const [filtre, setFiltre] = useState('tous');
+  const [rep, setRep] = useState(null);
+  const lus = useMemo(() => new Set(data.mailsLus || []), [data.mailsLus]);
+  const estNonLu = (m) => m.nonLu && !lus.has(m.id);
+  const nbNonLus = mails.filter(estNonLu).length;
+  const attente = data.boiteEnvoi || [];
+  const resultats = envoyes || [];
+  const n = norm(q);
+  const liste = mails
+    .filter(m => filtre === 'tous' || estNonLu(m))
+    .filter(m => !n || norm(`${m.de} ${m.adresse} ${m.sujet} ${m.corps || m.extrait}`).includes(n));
+  const mail = ouvert ? mails.find(m => m.id === ouvert) : null;
+
+  const marquerLus = (ids) => commit(d => {
+    const serveur = new Set(mails.filter(m => m.nonLu).map(m => m.id));
+    return { ...d, mailsLus: Array.from(new Set([...(d.mailsLus || []).filter(id => serveur.has(id)), ...ids])) };
+  });
+  const ouvrir = (m) => { setOuvert(m.id); setRep(null); if (estNonLu(m)) marquerLus([m.id]); };
+  const repondre = () => setRep({ objet: /^re\s*:/i.test(mail.sujet || '') ? mail.sujet : `Re: ${mail.sujet || ''}`.trim(), corps: '' });
+  const envoyer = () => {
+    if (!rep.corps.trim()) return;
+    onRepondre({ id: uid('rep'), mailId: mail.id, a: mail.repondreA || mail.adresse, objet: rep.objet.trim(), corps: rep.corps.trim() + citer(mail), creeLe: new Date().toISOString() });
+    setRep(null);
+  };
+  const etatRep = (m) => {
+    const enAttente = attente.filter(x => x.mailId === m.id && !resultats.some(r => r.id === x.id && r.ok));
+    if (enAttente.some(x => resultats.some(r => r.id === x.id && !r.ok))) return 'echec';
+    if (enAttente.length) return 'attente';
+    if (m.repondu || resultats.some(r => r.mailId === m.id && r.ok)) return 'ok';
+    return null;
+  };
+  const suivi = mail ? [
+    ...attente.filter(x => x.mailId === mail.id).map(x => ({ ...x, res: resultats.find(r => r.id === x.id) })),
+    ...resultats.filter(r => r.mailId === mail.id && r.ok && !attente.some(x => x.id === r.id)).map(r => ({ id: r.id, res: r })),
+  ] : [];
+
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Mails" meta={nonLus ? `${nonLus} non lu${nonLus > 1 ? 's' : ''}` : null}>
+      <PageHeader title="Mails" meta={nbNonLus ? `${nbNonLus} non lu${nbNonLus > 1 ? 's' : ''}` : null}>
+        {nbNonLus > 0 && <Button variant="secondary" onClick={() => marquerLus(mails.filter(estNonLu).map(m => m.id))}><CheckCheck size={15} /> Tout lu</Button>}
         <IconButton label={`Actualiser · ${horodatage(majLe)}`} onClick={onRefresh} className="f-ibtn-bd only-desk">
           <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
         </IconButton>
-        <LienBouton href={WEBMAIL_URL}><ExternalLink size={14} /> Webmail</LienBouton>
+        <LienBouton href={WEBMAIL_URL} className="only-desk"><ExternalLink size={14} /> Webmail</LienBouton>
       </PageHeader>
       <Card className="overflow-hidden">
-        {(mails || []).length > 0 && (
+        {mails.length > 0 && (
           <div className="f-toolbar">
             <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher un mail" style={{ flex: '1 1 220px' }} />
+            <Seg label="Filtre" value={filtre} onChange={setFiltre}
+              options={[{ id: 'tous', label: 'Tous' }, { id: 'nonlus', label: 'Non lus', count: nbNonLus || undefined }]} />
           </div>
         )}
-        {liste.length === 0 ? <Vide>Aucun mail</Vide> : liste.map((m, i) => (
-          <button key={m.id} type="button" className={`ml-row f-row ${i > 0 ? 'f-line' : ''} ${m.nonLu ? 'nonlu' : ''}`} onClick={() => setOuvert(m.id)}>
-            <span className="ml-dot" />
-            <span className="min-w-0 flex flex-col" style={{ gap: 2 }}>
-              <span className="flex items-baseline gap-2 min-w-0">
-                <span className="truncate ml-de">{m.de || m.adresse}</span>
-                <span className="ml-auto t-muted f-num text-xs shrink-0">{dateMail(m.date)}</span>
+        {liste.length === 0 ? <Vide>{filtre === 'nonlus' && mails.length ? 'Tout est lu' : 'Aucun mail'}</Vide> : liste.map((m, i) => {
+          const r = etatRep(m);
+          return (
+            <button key={m.id} type="button" className={`ml-row f-row ${i > 0 ? 'f-line' : ''} ${estNonLu(m) ? 'nonlu' : ''}`} onClick={() => ouvrir(m)}>
+              <span className="ml-dot" />
+              <span className="min-w-0 flex flex-col" style={{ gap: 2 }}>
+                <span className="flex items-baseline gap-2 min-w-0">
+                  <span className="truncate ml-de">{m.de || m.adresse}</span>
+                  <span className="ml-auto t-muted f-num text-xs shrink-0">{dateMail(m.date)}</span>
+                </span>
+                <span className="flex items-center gap-1 min-w-0">
+                  <span className="truncate ml-su">{m.sujet || '(sans objet)'}</span>
+                  {m.pj && <Paperclip size={12} className="t-faint shrink-0" />}
+                  {r === 'ok' && <Reply size={13} className="t-faint shrink-0" />}
+                  {r === 'attente' && <Clock size={13} className="t-faint shrink-0" />}
+                  {r === 'echec' && <AlertCircle size={13} className="t-neg shrink-0" />}
+                </span>
+                <span className="truncate t-muted text-xs">{m.extrait}</span>
               </span>
-              <span className="flex items-center gap-1 min-w-0">
-                <span className="truncate t-ink">{m.sujet || '(sans objet)'}</span>
-                {m.pj && <Paperclip size={12} className="t-faint shrink-0" />}
-              </span>
-              <span className="truncate t-muted text-xs">{m.extrait}</span>
-            </span>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </Card>
       {mail && (
-        <Modal open onClose={() => setOuvert(null)} title={mail.sujet || '(sans objet)'} size="md"
-          footer={<LienBouton href={WEBMAIL_URL} variant="primary"><ExternalLink size={14} /> Ouvrir le webmail</LienBouton>}>
+        <Modal open onClose={() => { setOuvert(null); setRep(null); }} title={mail.sujet || '(sans objet)'} size="lg"
+          footer={rep ? (
+            <>
+              <Button variant="secondary" onClick={() => setRep(null)}>Annuler</Button>
+              <Button onClick={envoyer} disabled={!rep.corps.trim()}><Send size={14} /> Envoyer</Button>
+            </>
+          ) : (
+            <>
+              <LienBouton href={WEBMAIL_URL}><ExternalLink size={14} /> Webmail</LienBouton>
+              {(mail.repondreA || mail.adresse) && <Button onClick={repondre}><Reply size={15} /> Répondre</Button>}
+            </>
+          )}>
           <div className="flex flex-col gap-4">
             <div className="f-box">
               <Ligne label="De"><span className="t-ink3 text-right truncate">{mail.de}{mail.adresse && mail.de !== mail.adresse ? ` · ${mail.adresse}` : ''}</span></Ligne>
               <Ligne label="Date"><span className="t-ink3 f-num">{new Date(mail.date).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })}</span></Ligne>
             </div>
+            {suivi.map(x => (
+              <div key={x.id} className={`ml-suivi ${x.res && !x.res.ok ? 'echec' : ''}`}>
+                {x.res && x.res.ok ? <Check size={14} /> : x.res ? <AlertCircle size={14} /> : <Clock size={14} />}
+                <span className="flex-1 min-w-0">
+                  {x.res && x.res.ok ? `Réponse envoyée · ${horodatage(x.res.le)}`
+                    : x.res ? `Échec de l’envoi${x.res.erreur ? ` : ${x.res.erreur}` : ''}`
+                      : 'Réponse en attente d’envoi'}
+                </span>
+                {!(x.res && x.res.ok) && <Button variant="ghost" size="sm" onClick={() => onAnnulerEnvoi(x.id)}>Annuler</Button>}
+              </div>
+            ))}
+            {rep && (
+              <div className="flex flex-col gap-3 ml-compose">
+                <div className="f-box">
+                  <Ligne label="À"><span className="t-ink3 text-right truncate">{mail.repondreA || mail.adresse}</span></Ligne>
+                </div>
+                <Field label="Objet"><Input value={rep.objet} onChange={(e) => setRep(p => ({ ...p, objet: e.target.value }))} /></Field>
+                <textarea className="f-field" rows={7} autoFocus value={rep.corps} placeholder="Votre réponse"
+                  onChange={(e) => setRep(p => ({ ...p, corps: e.target.value }))} />
+              </div>
+            )}
             {(mail.corps || mail.extrait)
-              ? <p className="t-ink2 ml-texte">{mail.corps || mail.extrait}</p>
+              ? <div className={`t-ink2 ml-texte ${rep ? 'ml-cite' : ''}`}>{avecLiens(mail.corps || mail.extrait)}</div>
               : <p className="t-muted text-xs">Contenu complet dans le webmail.</p>}
           </div>
         </Modal>
@@ -3279,7 +3619,19 @@ textarea.f-field { height: auto; padding: 8px 10px; line-height: 1.5; resize: ve
 .ml-row.nonlu .ml-dot { background: var(--m-ok); }
 .ml-de { color: var(--ink-3); font-weight: 500; }
 .ml-row.nonlu .ml-de { color: var(--ink); font-weight: 600; }
-.ml-texte { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.ml-texte { font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ml-texte a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-strong); }
+.ml-su { color: var(--ink-3); }
+.ml-row.nonlu .ml-su { color: var(--ink); font-weight: 500; }
+.ml-cite { padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); font-size: 13px; max-height: 260px; overflow-y: auto; }
+.ml-suivi { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 6px 4px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-3); font-size: 13px; }
+.ml-suivi.echec { color: var(--neg); }
+.ml-compose textarea { min-height: 150px; }
+
+/* Podcasts */
+.pd-audio { width: 100%; }
+@media (max-width: 520px) { .res-seg .ct { display: none; } .res-seg > button { padding: 0 4px; gap: 5px; } }
+.pd-ecoute .l-lib .t-ink { color: var(--ink-3); }
 
 /* Navigation : compteurs */
 .f-nav .ct { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -3318,7 +3670,7 @@ const SettingsModal = ({
   open, onClose,
   gistId, gistUser, isConnected, syncStatus, syncError, lastSyncAt, onConnect, onDisconnect, onForceSync,
   themePref, onThemeChange, bgEnabled, onBgToggle,
-  repo, onRepoChange, edtMaj, nbImport, onImportIcs, onClearIcs, geaMaj, moodleMaj, onCopierFavori,
+  repo, onRepoChange, edtMaj, nbImport, onImportIcs, onClearIcs, geaMaj, onCopierFavori,
   onExport, onImportClick, compte,
 }) => {
   const [tokenInput, setTokenInput] = useState('');
@@ -3407,10 +3759,6 @@ const SettingsModal = ({
               <span className="t-ink3 f-num">{horodatage(geaMaj)}</span>
               <a href={GEA_URL} target="_blank" rel="noopener noreferrer" className="f-ibtn" aria-label="Ouvrir le site GEA" title="Ouvrir le site GEA"><ExternalLink size={14} /></a>
             </Ligne>
-            <Ligne label="Moodle">
-              <span className="t-ink3 f-num">{horodatage(moodleMaj)}</span>
-              <a href={MOODLE_URL} target="_blank" rel="noopener noreferrer" className="f-ibtn" aria-label="Ouvrir Moodle" title="Ouvrir Moodle"><ExternalLink size={14} /></a>
-            </Ligne>
             <Ligne label="Favori d'import" icon={Copy} onClick={onCopierFavori}><span className="t-muted text-xs">Copier</span></Ligne>
             <Ligne label="Dépôt GitHub">
               <input value={repo} onChange={(e) => onRepoChange(e.target.value.trim())} placeholder="compte/etudes"
@@ -3489,10 +3837,9 @@ const NAV = [
   { id: 'edt', label: 'Emploi du temps', court: 'EDT', icon: CalendarDays },
   { id: 'mails', label: 'Mails', court: 'Mails', icon: Mail },
   { id: 'notes', label: 'Notes', court: 'Notes', icon: GraduationCap },
-  { id: 'fiches', label: 'Fiches', court: 'Fiches', icon: FileText },
-  { id: 'qcm', label: 'QCM', court: 'QCM', icon: ListChecks },
-  { id: 'moodle', label: 'Moodle', court: 'Moodle', icon: BookOpen },
+  { id: 'ressources', label: 'Ressources', court: 'Ressources', icon: Library },
 ];
+const SOUS_RESSOURCES = ['fiches', 'qcm', 'podcasts', 'obsidian'];
 
 function AppInner() {
   // Mobile : pas de zoom, plein écran
@@ -3532,12 +3879,21 @@ function AppInner() {
   useEffect(() => { if (edtDistant) LS.set('etudes_edt', JSON.stringify(edtDistant)); }, [edtDistant]);
 
   // ===== Navigation =====
-  const [view, setView] = useState(() => { const v = LS.get('etudes_view', 'edt'); return NAV.some(n => n.id === v) ? v : 'edt'; });
+  const [view, setView] = useState(() => {
+    const v = LS.get('etudes_view', 'edt');
+    if (SOUS_RESSOURCES.includes(v) || v === 'moodle') return 'ressources';
+    return NAV.some(n => n.id === v) ? v : 'edt';
+  });
+  const [ongletRes, setOngletRes] = useState(() => { const o = LS.get('etudes_res_onglet', 'fiches'); return SOUS_RESSOURCES.includes(o) ? o : 'fiches'; });
+  const choisirOnglet = (o) => { setOngletRes(o); LS.set('etudes_res_onglet', o); };
   const [focus, setFocus] = useState(null);
   const [signal, setSignal] = useState({ type: null, n: 0 });
   const envoyer = (type) => setSignal(s => ({ type, n: s.n + 1 }));
-  const goTo = (id, matiere = null) => {
-    setFocus(matiere ? { view: id, matiere, n: Date.now() } : null);
+  const goTo = (cible, matiere = null) => {
+    const sous = SOUS_RESSOURCES.includes(cible);
+    const id = sous ? 'ressources' : cible;
+    if (sous) choisirOnglet(cible);
+    setFocus(matiere ? { view: cible, matiere, n: Date.now() } : null);
     setView(id); LS.set('etudes_view', id);
     window.scrollTo(0, 0);
   };
@@ -3762,10 +4118,24 @@ function AppInner() {
     } else if (imp.source === 'moodle') {
       commit(d => ({ ...d, moodle: { majLe: imp.majLe, cours: imp.cours || [], echeances: imp.echeances || [] } }));
       montrer(`Moodle : ${pluriel((imp.cours || []).length, 'cours', 'cours')}`);
-      goTo('moodle');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pret, importRecu]);
+
+  // Réponses aux mails : déposées dans la boîte d'envoi du Gist, envoyées par le robot
+  const repondreMail = (item) => {
+    commit(d => ({ ...d, boiteEnvoi: [...(d.boiteEnvoi || []), item] }));
+    montrer('Réponse en attente d’envoi');
+    if (repo && gistToken) setTimeout(() => { gistApi.lancerEdt(gistToken, repo).catch(() => {}); }, 4000);
+  };
+  const annulerEnvoi = (id) => commit(d => ({ ...d, boiteEnvoi: (d.boiteEnvoi || []).filter(x => x.id !== id) }));
+  useEffect(() => {
+    const ok = new Set(((edtDistant && edtDistant.envoyes) || []).filter(r => r.ok).map(r => r.id));
+    if (ok.size && (data.boiteEnvoi || []).some(x => ok.has(x.id))) {
+      commit(d => ({ ...d, boiteEnvoi: (d.boiteEnvoi || []).filter(x => !ok.has(x.id)) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edtDistant, data.boiteEnvoi]);
 
   const actualiserEdt = async () => {
     if (edtBusy) return;
@@ -3850,13 +4220,17 @@ function AppInner() {
   const actions = {
     edt: [{ label: 'Actualiser', icon: <RefreshCw size={18} className={edtBusy ? 'animate-spin' : ''} />, fn: actualiserEdt }],
     notes: [{ label: 'Ajouter une note', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
-    fiches: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouvelle fiche', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
-    qcm: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouveau QCM', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
-    moodle: [],
+    ressources: {
+      fiches: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouvelle fiche', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
+      qcm: [{ label: 'Importer', icon: <Upload size={18} />, fn: () => envoyer('import') }, { label: 'Nouveau QCM', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
+      podcasts: [{ label: 'Nouveau podcast', icon: <Plus size={19} />, fn: () => envoyer('add'), main: true }],
+      obsidian: [],
+    }[ongletRes],
     mails: [{ label: 'Actualiser', icon: <RefreshCw size={18} className={edtBusy ? 'animate-spin' : ''} />, fn: actualiserEdt }],
   }[view];
   const mails = (edtDistant && edtDistant.mails) || [];
-  const nonLus = mails.filter(m => m.nonLu).length;
+  const lusLocaux = new Set(data.mailsLus || []);
+  const nonLus = mails.filter(m => m.nonLu && !lusLocaux.has(m.id)).length;
 
   const compte = `${pluriel(data.evaluations.length, 'note')} · ${pluriel(data.fiches.length, 'fiche')} · ${pluriel(data.qcms.length, 'QCM', 'QCM')}`;
 
@@ -3919,10 +4293,14 @@ function AppInner() {
                     onGoto={goTo} compteurs={compteurs} ressources={ressources} modifs={data.edtModifs || {}} onModif={modifierCours} />
                 )}
                 {view === 'notes' && <NotesView key={focus?.n || 'notes'} data={data} commit={commit} focus={focus} signal={signal} />}
-                {view === 'fiches' && <FichesView key={focus?.n || 'fiches'} data={data} commit={commit} focus={focus} signal={signal} />}
-                {view === 'qcm' && <QcmView key={focus?.n || 'qcm'} data={data} commit={commit} focus={focus} signal={signal} />}
-                {view === 'moodle' && <MoodleView data={data} robot={edtDistant?.moodle} />}
-                {view === 'mails' && <MailsView mails={mails} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy} />}
+                {view === 'ressources' && (
+                  <RessourcesView data={data} commit={commit} focus={focus} signal={signal} envoyer={envoyer}
+                    onglet={ongletRes} onOnglet={choisirOnglet} token={gistToken} montrer={montrer} />
+                )}
+                {view === 'mails' && (
+                  <MailsView mails={mails} data={data} commit={commit} majLe={edtDistant?.majLe} onRefresh={actualiserEdt} refreshing={edtBusy}
+                    envoyes={edtDistant?.envoyes} onRepondre={repondreMail} onAnnulerEnvoi={annulerEnvoi} />
+                )}
               </div>
             </main>
           </div>
@@ -3959,7 +4337,7 @@ function AppInner() {
           onConnect={connectGist} onDisconnect={disconnectGist} onForceSync={() => chargerGist()}
           themePref={themePref} onThemeChange={setThemePref} bgEnabled={bgEnabled} onBgToggle={() => setBgEnabled(v => !v)}
           repo={repo} onRepoChange={setRepo} edtMaj={edtDistant?.majLe} nbImport={(data.edtImport || []).length}
-          geaMaj={data.gea?.majLe} moodleMaj={data.moodle?.majLe} onCopierFavori={copierFavori}
+          geaMaj={data.gea?.majLe} onCopierFavori={copierFavori}
           onImportIcs={() => icsRef.current?.click()}
           onClearIcs={() => { if (window.confirm('Effacer les cours importés ?')) commit(d => ({ ...d, edtImport: [] })); }}
           onExport={exporter} onImportClick={() => jsonRef.current?.click()} compte={compte}
